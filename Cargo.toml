@@ -59,6 +59,9 @@ serde_derive = "1.0.104"
 members = [
     "async-graphql-parser",
     "async-graphql-derive",
+
+    "async-graphql-dsl",
+
     "async-graphql-actix-web",
     "async-graphql-warp",
     "async-graphql-tide",
