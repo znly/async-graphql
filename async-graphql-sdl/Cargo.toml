@@ -1,5 +1,5 @@
 [package]
-name = "async-graphql-dsl"
+name = "async-graphql-sdl"
 version = "0.1.0"
 authors = ["sunli <scott_s829@163.com>"]
 edition = "2018"
@@ -8,3 +8,4 @@ edition = "2018"
 async-graphql-parser = { path = "../async-graphql-parser", verion = "0.4.0" }
 anyhow = "1.0.31"
 askama = "0.9.0"
+itertools = "0.9.0"

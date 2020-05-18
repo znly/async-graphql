@@ -52,6 +52,19 @@ pub enum TypeDefinition {
     InputObject(Positioned<InputObjectType>),
 }
 
+impl TypeDefinition {
+    pub fn name(&self) -> &str {
+        match self {
+            TypeDefinition::Scalar(scalar) => scalar.name.as_str(),
+            TypeDefinition::Object(object) => object.name.as_str(),
+            TypeDefinition::Interface(interface) => interface.name.as_str(),
+            TypeDefinition::Union(union) => union.name.as_str(),
+            TypeDefinition::Enum(enum_type) => enum_type.name.as_str(),
+            TypeDefinition::InputObject(input_object) => input_object.name.as_str(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ScalarType {
     pub extend: bool,

@@ -330,7 +330,7 @@ impl SubscriptionRoot {}
 
 pub fn expect_passes_rule<'a, V, F>(factory: F, query_source: &str)
 where
-    V: Visitor<'a> + 'a,
+    V: Visitor<'a>,
     F: Fn() -> V,
 {
     expect_passes_rule_with_schema(
@@ -344,7 +344,7 @@ where
 
 pub fn expect_fails_rule<'a, V, F>(factory: F, query_source: &str)
 where
-    V: Visitor<'a> + 'a,
+    V: Visitor<'a>,
     F: Fn() -> V,
 {
     expect_fails_rule_with_schema(
@@ -367,7 +367,7 @@ where
     Query: ObjectType + Send + Sync + 'static,
     Mutation: ObjectType + Send + Sync + 'static,
     Subscription: SubscriptionType + Send + Sync + 'static,
-    V: Visitor<'a> + 'a,
+    V: Visitor<'a>,
     F: Fn() -> V,
 {
     let schema = Schema::new(query, mutation, subscription);
@@ -397,7 +397,7 @@ pub fn expect_passes_rule_with_schema<'a, Query, Mutation, Subscription, V, F>(
     Query: ObjectType + Send + Sync + 'static,
     Mutation: ObjectType + Send + Sync + 'static,
     Subscription: SubscriptionType + Send + Sync + 'static,
-    V: Visitor<'a> + 'a,
+    V: Visitor<'a>,
     F: Fn() -> V,
 {
     if let Err(err) = validate(query, mutation, subscription, factory, query_source) {
@@ -423,7 +423,7 @@ pub fn expect_fails_rule_with_schema<'a, Query, Mutation, Subscription, V, F>(
     Query: ObjectType + Send + Sync + 'static,
     Mutation: ObjectType + Send + Sync + 'static,
     Subscription: SubscriptionType + Send + Sync + 'static,
-    V: Visitor<'a> + 'a,
+    V: Visitor<'a>,
     F: Fn() -> V,
 {
     if let Ok(_) = validate(query, mutation, subscription, factory, query_source) {

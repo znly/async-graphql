@@ -60,7 +60,7 @@ members = [
     "async-graphql-parser",
     "async-graphql-derive",
 
-    "async-graphql-dsl",
+    "async-graphql-sdl",
 
     "async-graphql-actix-web",
     "async-graphql-warp",

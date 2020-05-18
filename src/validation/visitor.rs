@@ -252,8 +252,8 @@ impl<'a> Visitor<'a> for VisitorNil {}
 
 impl<'a, A, B> Visitor<'a> for VisitorCons<A, B>
 where
-    A: Visitor<'a> + 'a,
-    B: Visitor<'a> + 'a,
+    A: Visitor<'a>,
+    B: Visitor<'a>,
 {
     fn enter_document(&mut self, ctx: &mut VisitorContext<'a>, doc: &'a Document) {
         self.0.enter_document(ctx, doc);
