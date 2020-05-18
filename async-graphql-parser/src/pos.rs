@@ -123,4 +123,12 @@ impl<T> Positioned<T> {
             node: f(self),
         }
     }
+
+    #[inline]
+    pub(crate) fn map<'a, F: FnOnce(&'a T) -> R, R: 'a>(&'a self, f: F) -> Positioned<R> {
+        Positioned {
+            pos: self.pos,
+            node: f(&self.node),
+        }
+    }
 }

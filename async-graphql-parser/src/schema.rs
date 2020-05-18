@@ -53,15 +53,16 @@ pub enum TypeDefinition {
 }
 
 impl TypeDefinition {
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> Positioned<&str> {
         match self {
-            TypeDefinition::Scalar(scalar) => scalar.name.as_str(),
-            TypeDefinition::Object(object) => object.name.as_str(),
-            TypeDefinition::Interface(interface) => interface.name.as_str(),
-            TypeDefinition::Union(union) => union.name.as_str(),
-            TypeDefinition::Enum(enum_type) => enum_type.name.as_str(),
-            TypeDefinition::InputObject(input_object) => input_object.name.as_str(),
+            TypeDefinition::Scalar(scalar) => &scalar.name,
+            TypeDefinition::Object(object) => &object.name,
+            TypeDefinition::Interface(interface) => &interface.name,
+            TypeDefinition::Union(union) => &union.name,
+            TypeDefinition::Enum(enum_type) => &enum_type.name,
+            TypeDefinition::InputObject(input_object) => &input_object.name,
         }
+        .map(|n| n.as_str())
     }
 }
 

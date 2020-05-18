@@ -2,7 +2,6 @@ use crate::validation::check_rules;
 use anyhow::Result;
 use async_graphql_parser::parse_schema;
 use async_graphql_parser::schema::Document;
-use itertools::Itertools;
 use std::fmt::Write;
 use std::ops::Deref;
 
@@ -22,12 +21,7 @@ impl Schema {
         check_rules(&doc).map_err(|errors| {
             let mut output = String::new();
             for err in errors {
-                let locations = err
-                    .locations
-                    .into_iter()
-                    .map(|pos| format!("{}:{}", pos.line, pos.column))
-                    .join(", ");
-                writeln!(output, "[{}]: {}", locations, err.message).unwrap();
+                writeln!(output, "{}", err).unwrap();
             }
             anyhow::anyhow!(output)
         })?;

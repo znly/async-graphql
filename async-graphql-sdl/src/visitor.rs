@@ -3,6 +3,8 @@ use async_graphql_parser::schema::{
     ObjectType, ScalarType, SchemaDefinition, TypeDefinition, UnionType,
 };
 use async_graphql_parser::{Pos, Positioned};
+use itertools::Itertools;
+use std::fmt;
 
 #[derive(Debug, PartialEq)]
 pub struct RuleError {
@@ -10,6 +12,19 @@ pub struct RuleError {
     pub message: String,
 }
 
+impl fmt::Display for RuleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let locations = self
+            .locations
+            .iter()
+            .map(|pos| format!("{}:{}", pos.line, pos.column))
+            .join(", ");
+        write!(f, "[{}]: {}", locations, self.message)?;
+        Ok(())
+    }
+}
+
+#[derive(Default)]
 pub struct VisitorContext {
     pub errors: Vec<RuleError>,
 }
@@ -400,32 +415,36 @@ fn visit_definition<'a, V: Visitor<'a>>(
             v.enter_schema_definition(ctx, schema_definition);
             v.exit_schema_definition(ctx, schema_definition);
         }
-        Definition::TypeDefinition(schema_definition) => match &schema_definition.node {
-            TypeDefinition::Scalar(scalar) => {
-                v.enter_scalar_definition(ctx, scalar);
-                v.exit_scalar_definition(ctx, scalar);
+        Definition::TypeDefinition(type_definition) => {
+            v.enter_type_definition(ctx, type_definition);
+            match &type_definition.node {
+                TypeDefinition::Scalar(scalar) => {
+                    v.enter_scalar_definition(ctx, scalar);
+                    v.exit_scalar_definition(ctx, scalar);
+                }
+                TypeDefinition::Object(object) => {
+                    v.enter_object_definition(ctx, object);
+                    v.exit_object_definition(ctx, object);
+                }
+                TypeDefinition::Interface(interface) => {
+                    v.enter_interface_definition(ctx, interface);
+                    v.exit_interface_definition(ctx, interface);
+                }
+                TypeDefinition::Union(union) => {
+                    v.enter_union_definition(ctx, union);
+                    v.exit_union_definition(ctx, union);
+                }
+                TypeDefinition::Enum(enum_type) => {
+                    v.enter_enum_definition(ctx, enum_type);
+                    v.exit_enum_definition(ctx, enum_type);
+                }
+                TypeDefinition::InputObject(input_object) => {
+                    v.enter_input_object_definition(ctx, input_object);
+                    v.exit_input_object_definition(ctx, input_object);
+                }
             }
-            TypeDefinition::Object(object) => {
-                v.enter_object_definition(ctx, object);
-                v.exit_object_definition(ctx, object);
-            }
-            TypeDefinition::Interface(interface) => {
-                v.enter_interface_definition(ctx, interface);
-                v.exit_interface_definition(ctx, interface);
-            }
-            TypeDefinition::Union(union) => {
-                v.enter_union_definition(ctx, union);
-                v.exit_union_definition(ctx, union);
-            }
-            TypeDefinition::Enum(enum_type) => {
-                v.enter_enum_definition(ctx, enum_type);
-                v.exit_enum_definition(ctx, enum_type);
-            }
-            TypeDefinition::InputObject(input_object) => {
-                v.enter_input_object_definition(ctx, input_object);
-                v.exit_input_object_definition(ctx, input_object);
-            }
-        },
+            v.exit_type_definition(ctx, type_definition);
+        }
         Definition::DirectiveDefinition(directive_definition) => {
             v.enter_directive_definition(ctx, directive_definition);
             v.exit_directive_definition(ctx, directive_definition);
