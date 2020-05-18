@@ -242,14 +242,7 @@ pub fn generate(object_args: &args::Object, item_impl: &mut ItemImpl) -> Result<
                         #(#get_params)*
                         #guard
                         let field_name = std::sync::Arc::new(ctx.result_name().to_string());
-
-                        // I think the code here is safe because the lifetime of selection_set is always less than the environment.
-                        let field_selection_set = unsafe {
-                            (&ctx.selection_set
-                                as *const #crate_name::Positioned<#crate_name::parser::query::SelectionSet>)
-                                .as_ref()
-                                .unwrap()
-                        };
+                        let field_selection_set = std::sync::Arc::new(ctx.selection_set.clone());
 
                         let schema = schema.clone();
                         let pos = ctx.position();
@@ -258,7 +251,7 @@ pub fn generate(object_args: &args::Object, item_impl: &mut ItemImpl) -> Result<
                             let field_name = field_name.clone();
                             move |msg| {
                                 let environment = environment.clone();
-                                let field_selection_set = field_selection_set.clone();
+                                let field_selection_set = std::sync::Arc::clone(&field_selection_set);
                                 let schema = schema.clone();
                                 let field_name = field_name.clone();
                                 async move {
@@ -269,7 +262,7 @@ pub fn generate(object_args: &args::Object, item_impl: &mut ItemImpl) -> Result<
                                             parent: None,
                                             segment: #crate_name::QueryPathSegment::Name(&field_name),
                                         }),
-                                        field_selection_set,
+                                        field_selection_set.as_ref(),
                                         &resolve_id,
                                     );
                                     #crate_name::OutputValueType::resolve(&msg, &ctx_selection_set, pos).await
