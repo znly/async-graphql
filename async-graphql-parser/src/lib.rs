@@ -6,6 +6,7 @@ extern crate thiserror;
 pub mod query;
 pub mod schema;
 
+mod common;
 mod error;
 mod pos;
 mod query_parser;

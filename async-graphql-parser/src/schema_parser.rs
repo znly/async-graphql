@@ -1,6 +1,6 @@
 use crate::schema::*;
 use crate::utils::{unquote_string, PositionCalculator};
-use crate::{Positioned, Result};
+use crate::{Positioned, Result, Value};
 use pest::iterators::Pair;
 use pest::Parser;
 use std::collections::BTreeMap;

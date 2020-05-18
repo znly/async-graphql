@@ -1,25 +1,7 @@
-use crate::pos::Positioned;
+use crate::{Positioned, Value};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug)]
-#[allow(missing_docs)]
-pub enum Value {
-    Null,
-    Int(i64),
-    Float(f64),
-    String(String),
-    Boolean(bool),
-    Enum(String),
-    List(Vec<Value>),
-    Object(BTreeMap<String, Value>),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Type {
-    Named(String),
-    List(Box<Type>),
-    NonNull(Box<Type>),
-}
+pub use crate::common::{Directive, Type};
 
 #[derive(Debug)]
 pub struct Document {
@@ -176,10 +158,4 @@ pub struct DirectiveDefinition {
     pub name: Positioned<String>,
     pub arguments: Vec<Positioned<InputValue>>,
     pub locations: Vec<Positioned<DirectiveLocation>>,
-}
-
-#[derive(Debug)]
-pub struct Directive {
-    pub name: Positioned<String>,
-    pub arguments: Vec<(Positioned<String>, Positioned<Value>)>,
 }
