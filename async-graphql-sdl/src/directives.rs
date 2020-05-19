@@ -1,49 +1,30 @@
-use async_graphql_parser::Value;
-use std::collections::HashMap;
+use crate::Error;
+use anyhow::Result;
+use async_graphql_parser::schema::Directive;
+use async_graphql_parser::{Positioned, Value};
 
-pub enum DirectiveLocation {
-    /// Location adjacent to a schema definition.
-    Schema,
-
-    /// Location adjacent to a scalar definition.
-    Scalar,
-
-    /// Location adjacent to an object type definition.
-    Object,
-
-    /// Location adjacent to a field definition.
-    FieldDefinition,
-
-    /// Location adjacent to an argument definition.
-    ArgumentDefinition,
-
-    /// Location adjacent to an interface definition.
-    Interface,
-
-    /// Location adjacent to a union definition.
-    Union,
-
-    /// Location adjacent to an enum definition.
-    Enum,
-
-    /// Location adjacent to an enum value definition.
-    EnumValue,
-
-    /// Location adjacent to an input object type definition.
-    InputObject,
-
-    /// Location adjacent to an input object field definition.
-    InputFieldDefinition,
-}
-
-pub struct MetaDirective {
-    pub name: &'static str,
-    pub locations: Vec<DirectiveLocation>,
-    pub args: HashMap<&'static str, MetaInputValue>,
-}
-
-pub struct MetaInputValue {
-    pub name: &'static str,
-    pub ty: &'static str,
-    pub default_value: Value,
+pub fn scalar_type(directives: &[Positioned<Directive>]) -> Result<Option<&str>> {
+    let name = directives
+        .iter()
+        .find(|directive| directive.name.as_str() == "type")
+        .and_then(|directive| {
+            directive
+                .arguments
+                .iter()
+                .find(|(name, _)| name.as_str() == "name")
+                .map(|(_, value)| value)
+        });
+    if let Some(name) = name {
+        if let Value::String(name) = &name.node {
+            Ok(Some(name.as_str()))
+        } else {
+            bail!(Error {
+                locations: vec![name.pos],
+                message: "The \"name\" parameter type of the \"@type\" directive must be a string."
+                    .to_string(),
+            })
+        }
+    } else {
+        Ok(None)
+    }
 }

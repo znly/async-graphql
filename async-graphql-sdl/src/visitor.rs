@@ -1,37 +1,18 @@
+use crate::Error;
 use async_graphql_parser::schema::{
     Definition, DirectiveDefinition, Document, EnumType, InputObjectType, InterfaceType,
     ObjectType, ScalarType, SchemaDefinition, TypeDefinition, UnionType,
 };
 use async_graphql_parser::{Pos, Positioned};
-use itertools::Itertools;
-use std::fmt;
-
-#[derive(Debug, PartialEq)]
-pub struct RuleError {
-    pub locations: Vec<Pos>,
-    pub message: String,
-}
-
-impl fmt::Display for RuleError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let locations = self
-            .locations
-            .iter()
-            .map(|pos| format!("{}:{}", pos.line, pos.column))
-            .join(", ");
-        write!(f, "[{}]: {}", locations, self.message)?;
-        Ok(())
-    }
-}
 
 #[derive(Default)]
 pub struct VisitorContext {
-    pub errors: Vec<RuleError>,
+    pub errors: Vec<Error>,
 }
 
 impl VisitorContext {
     pub fn report_error<T: Into<String>>(&mut self, locations: Vec<Pos>, msg: T) {
-        self.errors.push(RuleError {
+        self.errors.push(Error {
             locations,
             message: msg.into(),
         })

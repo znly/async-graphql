@@ -1,5 +1,4 @@
 use crate::{Positioned, Value};
-use std::collections::BTreeMap;
 
 pub use crate::common::{Directive, Type};
 

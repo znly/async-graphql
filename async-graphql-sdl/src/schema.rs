@@ -1,7 +1,7 @@
 use crate::validation::check_rules;
 use anyhow::Result;
 use async_graphql_parser::parse_schema;
-use async_graphql_parser::schema::{Definition, Document};
+use async_graphql_parser::schema::Document;
 use std::fmt::Write;
 use std::ops::Deref;
 
@@ -23,7 +23,7 @@ impl Schema {
             for err in errors {
                 writeln!(output, "{}", err).unwrap();
             }
-            anyhow::anyhow!(output)
+            anyhow!(output)
         })?;
         Ok(Schema(doc))
     }

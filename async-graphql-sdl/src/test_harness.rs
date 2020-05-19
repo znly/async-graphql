@@ -1,4 +1,5 @@
-use crate::visitor::{visit, RuleError, Visitor, VisitorContext};
+use crate::visitor::{visit, Visitor, VisitorContext};
+use crate::Error;
 use async_graphql_parser::parse_schema;
 
 pub fn expect_passes_rule<'a, V, F>(factory: F, dsl: &str)
@@ -24,7 +25,7 @@ where
     }
 }
 
-pub fn validate<'a, V, F>(factory: F, dsl: &str) -> Result<(), Vec<RuleError>>
+pub fn validate<'a, V, F>(factory: F, dsl: &str) -> Result<(), Vec<Error>>
 where
     V: Visitor<'a>,
     F: Fn() -> V,
