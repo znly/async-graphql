@@ -205,7 +205,7 @@ pub fn generate(object_args: &args::Object, item_impl: &mut ItemImpl) -> Result<
                     method.sig.output = syn::parse2::<ReturnType>(
                         quote! { -> #crate_name::FieldResult<#inner_ty> },
                     )
-                    .expect("invalid result type");
+                        .expect("invalid result type");
                 }
 
                 schema_fields.push(quote! {
@@ -242,30 +242,31 @@ pub fn generate(object_args: &args::Object, item_impl: &mut ItemImpl) -> Result<
                         #(#get_params)*
                         #guard
                         let field_name = std::sync::Arc::new(ctx.result_name().to_string());
-                        let field_selection_set = std::sync::Arc::new(ctx.selection_set.clone());
+                        let field = std::sync::Arc::new(ctx.item.clone());
 
-                        let schema = schema.clone();
                         let pos = ctx.position();
-                        let environment = environment.clone();
+                        let schema_env = schema_env.clone();
+                        let query_env = query_env.clone();
                         let stream = #create_field_stream.then({
                             let field_name = field_name.clone();
                             move |msg| {
-                                let environment = environment.clone();
-                                let field_selection_set = std::sync::Arc::clone(&field_selection_set);
-                                let schema = schema.clone();
+                                let schema_env = schema_env.clone();
+                                let query_env = query_env.clone();
+                                let field = field.clone();
                                 let field_name = field_name.clone();
                                 async move {
                                     let resolve_id = std::sync::atomic::AtomicUsize::default();
-                                    let ctx_selection_set = environment.create_context(
-                                        &schema,
+                                    let ctx_selection_set = query_env.create_context(
+                                        &schema_env,
                                         Some(#crate_name::QueryPathNode {
                                             parent: None,
                                             segment: #crate_name::QueryPathSegment::Name(&field_name),
                                         }),
-                                        field_selection_set.as_ref(),
+                                        &field.selection_set,
                                         &resolve_id,
+                                        None,
                                     );
-                                    #crate_name::OutputValueType::resolve(&msg, &ctx_selection_set, pos).await
+                                    #crate_name::OutputValueType::resolve(&msg, &ctx_selection_set, &*field).await
                                 }
                             }
                         })
@@ -324,16 +325,14 @@ pub fn generate(object_args: &args::Object, item_impl: &mut ItemImpl) -> Result<
         impl #crate_name::SubscriptionType for #self_ty #where_clause {
             #[allow(unused_variables)]
             #[allow(bare_trait_objects)]
-            async fn create_field_stream<Query, Mutation>(
+            async fn create_field_stream(
                 &self,
                 idx: usize,
                 ctx: &#crate_name::Context<'_>,
-                schema: &#crate_name::Schema<Query, Mutation, Self>,
-                environment: std::sync::Arc<#crate_name::Environment>,
+                schema_env: #crate_name::SchemaEnv,
+                query_env: #crate_name::QueryEnv,
             ) -> #crate_name::Result<std::pin::Pin<Box<dyn #crate_name::futures::Stream<Item = #crate_name::Result<#crate_name::serde_json::Value>> + Send>>>
             where
-                Query: #crate_name::ObjectType + Send + Sync + 'static,
-                Mutation: #crate_name::ObjectType + Send + Sync + 'static,
                 Self: Send + Sync + 'static + Sized,
             {
                 use #crate_name::futures::StreamExt;

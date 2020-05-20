@@ -59,6 +59,10 @@ impl Serialize for GQLResponse {
         match &self.0 {
             Ok(res) => {
                 let mut map = serializer.serialize_map(None)?;
+                if let Some(path) = &res.path {
+                    map.serialize_key("path")?;
+                    map.serialize_value(path)?;
+                }
                 map.serialize_key("data")?;
                 map.serialize_value(&res.data)?;
                 if res.extensions.is_some() {
@@ -209,6 +213,7 @@ mod tests {
     #[test]
     fn test_response_data() {
         let resp = GQLResponse(Ok(QueryResponse {
+            path: None,
             data: json!({"ok": true}),
             extensions: None,
             cache_control: Default::default(),
