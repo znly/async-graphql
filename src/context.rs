@@ -1,4 +1,4 @@
-use crate::extensions::BoxExtension;
+use crate::extensions::Extensions;
 use crate::parser::query::{Directive, Field, SelectionSet};
 use crate::schema::SchemaEnv;
 use crate::{
@@ -263,7 +263,6 @@ pub struct ContextBase<'a, T> {
     pub path_node: Option<QueryPathNode<'a>>,
     pub(crate) resolve_id: ResolveId,
     pub(crate) inc_resolve_id: &'a AtomicUsize,
-    pub(crate) extensions: &'a [BoxExtension],
     #[doc(hidden)]
     pub item: T,
     pub(crate) schema_env: &'a SchemaEnv,
@@ -281,6 +280,7 @@ impl<'a, T> Deref for ContextBase<'a, T> {
 
 #[doc(hidden)]
 pub struct QueryEnvInner {
+    pub extensions: Extensions,
     pub variables: Variables,
     pub document: Document,
     pub ctx_data: Arc<Data>,
@@ -300,8 +300,14 @@ impl Deref for QueryEnv {
 
 impl QueryEnv {
     #[doc(hidden)]
-    pub fn new(variables: Variables, document: Document, ctx_data: Arc<Data>) -> QueryEnv {
+    pub fn new(
+        extensions: Extensions,
+        variables: Variables,
+        document: Document,
+        ctx_data: Arc<Data>,
+    ) -> QueryEnv {
         QueryEnv(Arc::new(QueryEnvInner {
+            extensions,
             variables,
             document,
             ctx_data,
@@ -321,7 +327,6 @@ impl QueryEnv {
             path_node,
             resolve_id: ResolveId::root(),
             inc_resolve_id,
-            extensions: &[],
             item,
             schema_env,
             query_env: self,
@@ -358,7 +363,6 @@ impl<'a, T> ContextBase<'a, T> {
                         .unwrap_or_else(|| field.name.as_str()),
                 ),
             }),
-            extensions: self.extensions,
             item: field,
             resolve_id: self.get_child_resolve_id(),
             inc_resolve_id: self.inc_resolve_id,
@@ -375,7 +379,6 @@ impl<'a, T> ContextBase<'a, T> {
     ) -> ContextBase<'a, &'a Positioned<SelectionSet>> {
         ContextBase {
             path_node: self.path_node.clone(),
-            extensions: self.extensions,
             item: selection_set,
             resolve_id: self.resolve_id,
             inc_resolve_id: &self.inc_resolve_id,
@@ -386,6 +389,12 @@ impl<'a, T> ContextBase<'a, T> {
     }
 
     /// Gets the global data defined in the `Context` or `Schema`.
+    ///
+    /// If both `Schema` and `Query` have the same data type, the data in the `Query` is obtained.
+    ///
+    /// # Panics
+    ///
+    /// It will panic if the specified data type does not exist.
     pub fn data<D: Any + Send + Sync>(&self) -> &D {
         self.data_opt::<D>()
             .expect("The specified data type does not exist.")
@@ -511,7 +520,6 @@ impl<'a> ContextBase<'a, &'a Positioned<SelectionSet>> {
                 parent: self.path_node.as_ref(),
                 segment: QueryPathSegment::Index(idx),
             }),
-            extensions: self.extensions,
             item: self.item,
             resolve_id: self.get_child_resolve_id(),
             inc_resolve_id: self.inc_resolve_id,
