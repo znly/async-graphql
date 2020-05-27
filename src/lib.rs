@@ -1,4 +1,4 @@
-//! # The GraphQL server library implemented by rust
+//! # A GraphQL server library implemented in Rust
 //!
 //! <div align="center">
 //! <!-- CI -->
@@ -151,8 +151,7 @@ pub use registry::CacheControl;
 pub use scalars::{Any, Json, ID};
 pub use schema::{Schema, SchemaBuilder, SchemaEnv};
 pub use subscription::{
-    SimpleBroker, SubscriptionStream, SubscriptionStreams, SubscriptionTransport,
-    WebSocketTransport,
+    SimpleBroker, SubscriptionStreams, SubscriptionTransport, WebSocketTransport,
 };
 pub use types::{
     Connection, Cursor, DataSource, Deferred, EmptyEdgeFields, EmptyMutation, EmptySubscription,
@@ -258,7 +257,7 @@ pub use types::{EnumItem, EnumType};
 ///         Ok(self.value)
 ///     }
 ///
-///     async fn value_with_arg(&self, #[arg(default = "1")] a: i32) -> i32 {
+///     async fn value_with_arg(&self, #[arg(default = 1)] a: i32) -> i32 {
 ///         a
 ///     }
 /// }
@@ -412,7 +411,7 @@ pub use async_graphql_derive::Enum;
 /// #[InputObject]
 /// struct MyInputObject {
 ///     a: i32,
-///     #[field(default = "10")]
+///     #[field(default = 10)]
 ///     b: i32,
 /// }
 ///
@@ -453,6 +452,7 @@ pub use async_graphql_derive::InputObject;
 /// | Attribute   | description               | Type     | Optional |
 /// |-------------|---------------------------|----------|----------|
 /// | name        | Field name                | string   | N        |
+/// | method      | Method name               | string   | Y        |
 /// | type        | Field type                | string   | N        |
 /// | desc        | Field description         | string   | Y        |
 /// | deprecation | Field deprecation reason  | string   | Y        |
