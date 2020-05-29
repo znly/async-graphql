@@ -6,7 +6,7 @@ use crate::{
     Positioned, QueryError, Result, Type,
 };
 use async_graphql_parser::query::Field;
-use futures::{Stream, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use indexmap::map::IndexMap;
 use std::borrow::Cow;
 
@@ -20,7 +20,7 @@ pub struct Connection<
     EE: ObjectType + Send = EmptyFields,
 > {
     /// All edges of the current page.
-    pub(crate) edges: Vec<Edge<C, T, EE>>,
+    edges: Vec<Edge<C, T, EE>>,
     additional_fields: EC,
     has_previous_page: bool,
     has_next_page: bool,
@@ -51,7 +51,7 @@ where
     EE: ObjectType + Send,
 {
     /// Create a new connection, it can have some additional fields.
-    pub fn new_with_additional_fields(
+    pub fn with_additional_fields(
         has_previous_page: bool,
         has_next_page: bool,
         additional_fields: EC,
@@ -73,7 +73,15 @@ where
     EE: ObjectType + Sync + Send,
 {
     /// Append edges with `IntoIterator<Item = Edge<C, T, EE>>`
-    pub fn append<I>(&mut self, iter: I) -> FieldResult<()>
+    pub fn append<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Edge<C, T, EE>>,
+    {
+        self.edges.extend(iter);
+    }
+
+    /// Append edges with `IntoIterator<Item = Edge<C, T, EE>>`
+    pub fn try_append<I>(&mut self, iter: I) -> FieldResult<()>
     where
         I: IntoIterator<Item = FieldResult<Edge<C, T, EE>>>,
     {
@@ -84,7 +92,15 @@ where
     }
 
     /// Append edges with `Stream<Item = FieldResult<Edge<C, T, EE>>>`
-    pub async fn append_stream<S>(&mut self, stream: S) -> FieldResult<()>
+    pub async fn append_stream<S>(&mut self, stream: S)
+    where
+        S: Stream<Item = Edge<C, T, EE>> + Unpin,
+    {
+        self.edges.extend(stream.collect::<Vec<_>>().await);
+    }
+
+    /// Append edges with `Stream<Item = FieldResult<Edge<C, T, EE>>>`
+    pub async fn try_append_stream<S>(&mut self, stream: S) -> FieldResult<()>
     where
         S: Stream<Item = FieldResult<Edge<C, T, EE>>> + Unpin,
     {
