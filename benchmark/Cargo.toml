@@ -1,0 +1,13 @@
+[package]
+name = "graphql-benchmark"
+version = "1.14.11"
+authors = ["sunli <scott_s829@163.com>"]
+edition = "2018"
+
+[dev-dependencies]
+criterion = "0.3"
+simple = { path = "simple" }
+
+[[bench]]
+name = "simple"
+harness = false
