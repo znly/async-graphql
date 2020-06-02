@@ -4,7 +4,7 @@
   <!-- CI -->
   <img src="https://github.com/async-graphql/async-graphql/workflows/CI/badge.svg" />
   <!-- codecov -->
-  <img src="https://codecov.io/gh/sunli829/async-graphql/branch/master/graph/badge.svg" />
+  <img src="https://codecov.io/gh/async-graphql/async-graphql/branch/master/graph/badge.svg" />
   <!-- Crates version -->
   <a href="https://crates.io/crates/async-graphql">
     <img src="https://img.shields.io/crates/v/async-graphql.svg?style=flat-square"
@@ -62,6 +62,8 @@ cargo bench
 ```
 
 Now HTML report is available at `benchmark/target/criterion/report`
+
+Read more here: https://bheisler.github.io/criterion.rs/book/criterion_rs.html
 
 ## Features
 
