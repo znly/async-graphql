@@ -46,25 +46,6 @@ We currently plan to start following SemVer once we reach the `v2.0.0` release, 
 
 In accordance with Rust's policy on pre-`1.0.0` crates, we will try to keep breaking changes limited to minor version changes, but if things don't seem to be compiling after an upgrade, it is likely you'll need to dive into compiler errors to update some syntax that changed. Feel free to open an [issue](https://github.com/async-graphql/async-graphql/issues) if something seems weird!
 
-## Examples
-
-If you are just getting started, we recommend checking out our examples at: https://github.com/async-graphql/examples
-
-To see how you would create a Relay-compliant server using async-graphql, warp, diesel & postgresql, you can also check out a real-world example at: https://github.com/phated/twentyfive-stars
-
-## Benchmark
-
-Ensure that there is no CPU-heavy process in background!
-
-```shell script
-cd benchmark
-cargo bench
-```
-
-Now HTML report is available at `benchmark/target/criterion/report`
-
-Read more here: https://bheisler.github.io/criterion.rs/book/criterion_rs.html
-
 ## Features
 
 * Fully support async/await
@@ -80,6 +61,36 @@ Read more here: https://bheisler.github.io/criterion.rs/book/criterion_rs.html
 * Limit query complexity/depth
 * Error Extensions
 * Apollo Federation
+
+## Examples
+
+If you are just getting started, we recommend checking out our examples at: https://github.com/async-graphql/examples
+
+To see how you would create a Relay-compliant server using async-graphql, warp, diesel & postgresql, you can also check out a real-world example at: https://github.com/phated/twentyfive-stars
+
+## Benchmark
+
+Ensure that there is no CPU-heavy process in background!
+
+```shell script
+cd benchmark
+
+#measure all with system malloc
+cargo bench
+
+#measure only chat run
+cargo bench -- "chat run"
+
+#measure all with jemalloc
+cargo bench --features jemalloc
+
+#measure only simple run with jemalloc 
+cargo bench --features jemalloc -- "simple run"
+```
+
+Now HTML report is available at `benchmark/target/criterion/report`
+
+Read more here: https://bheisler.github.io/criterion.rs/book/criterion_rs.html
 
 ## Integrations
 
