@@ -33,13 +33,12 @@ pub async fn test_enum_type() {
     }
 
     let schema = Schema::new(Root { value: MyEnum::A }, EmptyMutation, EmptySubscription);
-    let query = format!(
-        r#"{{
+    let query = r#"{
             value
             testArg(input: A)
-            testInput(input: {{value: B}}) }}
-            "#
-    );
+            testInput(input: {value: B})
+        }"#
+    .to_owned();
     assert_eq!(
         schema.execute(&query).await.unwrap().data,
         serde_json::json!({
@@ -52,10 +51,10 @@ pub async fn test_enum_type() {
 
 #[async_std::test]
 pub async fn test_enum_derive_and_item_attributes() {
-    use serde_derive::Deserialize;
+    use serde::Deserialize;
 
     #[async_graphql::Enum]
-    #[derive(Deserialize, PartialEq, Debug)]
+    #[derive(Deserialize, Debug)]
     enum Test {
         #[serde(alias = "Other")]
         Real,

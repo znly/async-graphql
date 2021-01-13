@@ -1,122 +1,67 @@
+use crate::base::Type;
 use crate::extensions::Extensions;
-use crate::parser::query::{Directive, Field, SelectionSet};
-use crate::schema::SchemaEnv;
-use crate::{
-    InputValueType, Lookahead, Pos, Positioned, QueryError, QueryResponse, Result, Type, Value,
+use crate::parser::types::{
+    Directive, ExecutableDocumentData, Field, Name, SelectionSet, Value as InputValue,
 };
-use async_graphql_parser::query::Document;
-use async_graphql_parser::UploadValue;
+use crate::schema::SchemaEnv;
+use crate::{FieldResult, InputValueType, Lookahead, Pos, Positioned, QueryError, Result, Value};
 use fnv::FnvHashMap;
-use futures::Future;
-use parking_lot::Mutex;
+use serde::ser::SerializeSeq;
+use serde::{Serialize, Serializer};
 use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
+use std::convert::TryFrom;
+use std::fmt::{self, Display, Formatter};
+use std::ops::Deref;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
-/// Variables of query
-#[derive(Debug, Clone)]
-pub struct Variables(Value);
+/// Variables of a query.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Variables(pub BTreeMap<Name, Value>);
 
-impl Default for Variables {
-    fn default() -> Self {
-        Self(Value::Object(Default::default()))
-    }
-}
-
-impl Deref for Variables {
-    type Target = BTreeMap<String, Value>;
-
-    fn deref(&self) -> &Self::Target {
-        if let Value::Object(obj) = &self.0 {
-            obj
-        } else {
-            unreachable!()
+impl Display for Variables {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("{")?;
+        for (i, (name, value)) in self.0.iter().enumerate() {
+            write!(f, "{}{}: {}", if i == 0 { "" } else { ", " }, name, value)?;
         }
-    }
-}
-
-impl DerefMut for Variables {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        if let Value::Object(obj) = &mut self.0 {
-            obj
-        } else {
-            unreachable!()
-        }
+        f.write_str("}")
     }
 }
 
 impl Variables {
     /// Parse variables from JSON object.
-    pub fn parse_from_json(value: serde_json::Value) -> Result<Self> {
-        if let Value::Object(obj) = value.into() {
-            Ok(Variables(Value::Object(obj)))
+    ///
+    /// If the value is not a map, or the keys of map are not valid GraphQL names, then an empty
+    /// `Variables` instance will be returned.
+    pub fn parse_from_json(value: serde_json::Value) -> Self {
+        if let Ok(Value::Object(obj)) = Value::from_json(value) {
+            Self(obj)
         } else {
-            Ok(Default::default())
+            Default::default()
         }
     }
 
-    pub(crate) fn set_upload(
-        &mut self,
-        var_path: &str,
-        filename: String,
-        content_type: Option<String>,
-        content: File,
-    ) {
-        let mut it = var_path.split('.').peekable();
+    pub(crate) fn variable_path(&mut self, path: &str) -> Option<&mut Value> {
+        let mut parts = path.strip_prefix("variables.")?.split('.');
 
-        if let Some(first) = it.next() {
-            if first != "variables" {
-                return;
-            }
-        }
+        let initial = self.0.get_mut(parts.next().unwrap())?;
 
-        let mut current = &mut self.0;
-        while let Some(s) = it.next() {
-            let has_next = it.peek().is_some();
-
-            if let Ok(idx) = s.parse::<i32>() {
-                if let Value::List(ls) = current {
-                    if let Some(value) = ls.get_mut(idx as usize) {
-                        if !has_next {
-                            *value = Value::Upload(UploadValue {
-                                filename,
-                                content_type,
-                                content,
-                            });
-                            return;
-                        } else {
-                            current = value;
-                        }
-                    } else {
-                        return;
-                    }
-                }
-            } else if let Value::Object(obj) = current {
-                if let Some(value) = obj.get_mut(s) {
-                    if !has_next {
-                        *value = Value::Upload(UploadValue {
-                            filename,
-                            content_type,
-                            content,
-                        });
-                        return;
-                    } else {
-                        current = value;
-                    }
-                } else {
-                    return;
-                }
-            }
-        }
+        parts.try_fold(initial, |current, part| match current {
+            Value::List(list) => part
+                .parse::<u32>()
+                .ok()
+                .and_then(|idx| usize::try_from(idx).ok())
+                .and_then(move |idx| list.get_mut(idx)),
+            Value::Object(obj) => obj.get_mut(part),
+            _ => None,
+        })
     }
 }
 
+/// Schema/Context data.
 #[derive(Default)]
-/// Schema/Context data
 pub struct Data(FnvHashMap<TypeId, Box<dyn Any + Sync + Send>>);
 
 impl Data {
@@ -152,8 +97,29 @@ pub struct QueryPathNode<'a> {
     pub segment: QueryPathSegment<'a>,
 }
 
-impl<'a> std::fmt::Display for QueryPathNode<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> serde::Serialize for QueryPathNode<'a> {
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(None)?;
+        self.for_each(|segment| match segment {
+            QueryPathSegment::Index(idx) => {
+                seq.serialize_element(&idx).ok();
+            }
+            QueryPathSegment::Name(name) => {
+                seq.serialize_element(name).ok();
+            }
+        });
+        seq.end()
+    }
+}
+
+impl<'a> Display for QueryPathNode<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut first = true;
         self.for_each(|segment| {
             if !first {
@@ -174,7 +140,8 @@ impl<'a> std::fmt::Display for QueryPathNode<'a> {
 }
 
 impl<'a> QueryPathNode<'a> {
-    pub(crate) fn field_name(&self) -> &str {
+    /// Get the current field name.
+    pub fn field_name(&self) -> &str {
         let mut p = self;
         loop {
             if let QueryPathSegment::Name(name) = &p.segment {
@@ -193,18 +160,6 @@ impl<'a> QueryPathNode<'a> {
             parent.for_each_ref(f);
         }
         f(&self.segment);
-    }
-
-    #[doc(hidden)]
-    pub fn to_json(&self) -> Vec<serde_json::Value> {
-        let mut path: Vec<serde_json::Value> = Vec::new();
-        self.for_each(|segment| {
-            path.push(match segment {
-                QueryPathSegment::Index(idx) => (*idx).into(),
-                QueryPathSegment::Name(name) => (*name).to_string().into(),
-            })
-        });
-        path
     }
 }
 
@@ -227,32 +182,13 @@ impl ResolveId {
     }
 }
 
-impl std::fmt::Display for ResolveId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for ResolveId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if let Some(parent) = self.parent {
             write!(f, "{}:{}", parent, self.current)
         } else {
             write!(f, "{}", self.current)
         }
-    }
-}
-
-#[doc(hidden)]
-pub type BoxDeferFuture =
-    Pin<Box<dyn Future<Output = Result<(QueryResponse, DeferList)>> + Send + 'static>>;
-
-#[doc(hidden)]
-pub struct DeferList {
-    pub path_prefix: Vec<serde_json::Value>,
-    pub futures: Mutex<Vec<BoxDeferFuture>>,
-}
-
-impl DeferList {
-    pub(crate) fn append<F>(&self, fut: F)
-    where
-        F: Future<Output = Result<(QueryResponse, DeferList)>> + Send + 'static,
-    {
-        self.futures.lock().push(Box::pin(fut));
     }
 }
 
@@ -267,7 +203,6 @@ pub struct ContextBase<'a, T> {
     pub item: T,
     pub(crate) schema_env: &'a SchemaEnv,
     pub(crate) query_env: &'a QueryEnv,
-    pub(crate) defer_list: Option<&'a DeferList>,
 }
 
 impl<'a, T> Deref for ContextBase<'a, T> {
@@ -280,9 +215,9 @@ impl<'a, T> Deref for ContextBase<'a, T> {
 
 #[doc(hidden)]
 pub struct QueryEnvInner {
-    pub extensions: Extensions,
+    pub extensions: spin::Mutex<Extensions>,
     pub variables: Variables,
-    pub document: Document,
+    pub document: ExecutableDocumentData,
     pub ctx_data: Arc<Data>,
 }
 
@@ -301,9 +236,9 @@ impl Deref for QueryEnv {
 impl QueryEnv {
     #[doc(hidden)]
     pub fn new(
-        extensions: Extensions,
+        extensions: spin::Mutex<Extensions>,
         variables: Variables,
-        document: Document,
+        document: ExecutableDocumentData,
         ctx_data: Arc<Data>,
     ) -> QueryEnv {
         QueryEnv(Arc::new(QueryEnvInner {
@@ -321,7 +256,6 @@ impl QueryEnv {
         path_node: Option<QueryPathNode<'a>>,
         item: T,
         inc_resolve_id: &'a AtomicUsize,
-        defer_list: Option<&'a DeferList>,
     ) -> ContextBase<'a, T> {
         ContextBase {
             path_node,
@@ -330,7 +264,6 @@ impl QueryEnv {
             item,
             schema_env,
             query_env: self,
-            defer_list,
         }
     }
 }
@@ -355,20 +288,13 @@ impl<'a, T> ContextBase<'a, T> {
         ContextBase {
             path_node: Some(QueryPathNode {
                 parent: self.path_node.as_ref(),
-                segment: QueryPathSegment::Name(
-                    field
-                        .alias
-                        .as_ref()
-                        .map(|alias| alias.as_str())
-                        .unwrap_or_else(|| field.name.as_str()),
-                ),
+                segment: QueryPathSegment::Name(&field.node.response_key().node),
             }),
             item: field,
             resolve_id: self.get_child_resolve_id(),
             inc_resolve_id: self.inc_resolve_id,
             schema_env: self.schema_env,
             query_env: self.query_env,
-            defer_list: self.defer_list,
         }
     }
 
@@ -384,7 +310,6 @@ impl<'a, T> ContextBase<'a, T> {
             inc_resolve_id: &self.inc_resolve_id,
             schema_env: self.schema_env,
             query_env: self.query_env,
-            defer_list: self.defer_list,
         }
     }
 
@@ -392,15 +317,25 @@ impl<'a, T> ContextBase<'a, T> {
     ///
     /// If both `Schema` and `Query` have the same data type, the data in the `Query` is obtained.
     ///
+    /// # Errors
+    ///
+    /// Returns a `FieldError` if the specified type data does not exist.
+    pub fn data<D: Any + Send + Sync>(&self) -> FieldResult<&D> {
+        self.data_opt::<D>()
+            .ok_or_else(|| format!("Data `{}` does not exist.", std::any::type_name::<D>()).into())
+    }
+
+    /// Gets the global data defined in the `Context` or `Schema`.
+    ///
     /// # Panics
     ///
     /// It will panic if the specified data type does not exist.
-    pub fn data<D: Any + Send + Sync>(&self) -> &D {
+    pub fn data_unchecked<D: Any + Send + Sync>(&self) -> &D {
         self.data_opt::<D>()
-            .expect("The specified data type does not exist.")
+            .unwrap_or_else(|| panic!("Data `{}` does not exist.", std::any::type_name::<D>()))
     }
 
-    /// Gets the global data defined in the `Context` or `Schema`, returns `None` if the specified type data does not exist.
+    /// Gets the global data defined in the `Context` or `Schema` or `None` if the specified type data does not exist.
     pub fn data_opt<D: Any + Send + Sync>(&self) -> Option<&D> {
         self.query_env
             .ctx_data
@@ -411,103 +346,77 @@ impl<'a, T> ContextBase<'a, T> {
     }
 
     fn var_value(&self, name: &str, pos: Pos) -> Result<Value> {
-        let def = self
-            .query_env
+        self.query_env
             .document
-            .current_operation()
+            .operation
+            .node
             .variable_definitions
             .iter()
-            .find(|def| def.name.node == name);
-        if let Some(def) = def {
-            if let Some(var_value) = self.query_env.variables.get(def.name.as_str()) {
-                return Ok(var_value.clone());
-            } else if let Some(default) = &def.default_value {
-                return Ok(default.clone_inner());
-            }
-        }
-        Err(QueryError::VarNotDefined {
-            var_name: name.to_string(),
-        }
-        .into_error(pos))
+            .find(|def| def.node.name.node == name)
+            .and_then(|def| {
+                self.query_env
+                    .variables
+                    .0
+                    .get(&def.node.name.node)
+                    .or_else(|| def.node.default_value())
+            })
+            .cloned()
+            .ok_or_else(|| {
+                QueryError::VarNotDefined {
+                    var_name: name.to_owned(),
+                }
+                .into_error(pos)
+            })
     }
 
-    fn resolve_input_value(&self, value: &mut Value, pos: Pos) -> Result<()> {
-        match value {
-            Value::Variable(var_name) => {
-                *value = self.var_value(&var_name, pos)?;
-                Ok(())
-            }
-            Value::List(ref mut ls) => {
-                for value in ls {
-                    self.resolve_input_value(value, pos)?;
-                }
-                Ok(())
-            }
-            Value::Object(ref mut obj) => {
-                for value in obj.values_mut() {
-                    self.resolve_input_value(value, pos)?;
-                }
-                Ok(())
-            }
-            _ => Ok(()),
-        }
+    fn resolve_input_value(&self, value: Positioned<InputValue>) -> Result<Value> {
+        let pos = value.pos;
+        value
+            .node
+            .into_const_with(|name| self.var_value(&name, pos))
+    }
+
+    #[doc(hidden)]
+    pub fn is_ifdef(&self, directives: &[Positioned<Directive>]) -> bool {
+        directives
+            .iter()
+            .any(|directive| directive.node.name.node == "ifdef")
     }
 
     #[doc(hidden)]
     pub fn is_skip(&self, directives: &[Positioned<Directive>]) -> Result<bool> {
         for directive in directives {
-            if directive.name.node == "skip" {
-                if let Some(value) = directive.get_argument("if") {
-                    let mut inner_value = value.clone_inner();
-                    self.resolve_input_value(&mut inner_value, value.pos)?;
-                    match InputValueType::parse(Some(inner_value)) {
-                        Ok(true) => return Ok(true),
-                        Ok(false) => {}
-                        Err(err) => {
-                            return Err(err.into_error(value.pos, bool::qualified_type_name()))
-                        }
-                    }
-                } else {
-                    return Err(QueryError::RequiredDirectiveArgs {
-                        directive: "@skip",
+            let include = match &*directive.node.name.node {
+                "skip" => false,
+                "include" => true,
+                _ => continue,
+            };
+
+            let condition_input = directive
+                .node
+                .get_argument("if")
+                .ok_or_else(|| {
+                    QueryError::RequiredDirectiveArgs {
+                        directive: if include { "@skip" } else { "@include" },
                         arg_name: "if",
                         arg_type: "Boolean!",
                     }
-                    .into_error(directive.position()));
-                }
-            } else if directive.name.node == "include" {
-                if let Some(value) = directive.get_argument("if") {
-                    let mut inner_value = value.clone_inner();
-                    self.resolve_input_value(&mut inner_value, value.pos)?;
-                    match InputValueType::parse(Some(inner_value)) {
-                        Ok(false) => return Ok(true),
-                        Ok(true) => {}
-                        Err(err) => {
-                            return Err(err.into_error(value.pos, bool::qualified_type_name()))
-                        }
-                    }
-                } else {
-                    return Err(QueryError::RequiredDirectiveArgs {
-                        directive: "@include",
-                        arg_name: "if",
-                        arg_type: "Boolean!",
-                    }
-                    .into_error(directive.position()));
-                }
+                    .into_error(directive.pos)
+                })?
+                .clone();
+
+            let pos = condition_input.pos;
+            let condition_input = self.resolve_input_value(condition_input)?;
+
+            if include
+                != <bool as InputValueType>::parse(Some(condition_input))
+                    .map_err(|e| e.into_error(pos, bool::qualified_type_name()))?
+            {
+                return Ok(true);
             }
         }
 
         Ok(false)
-    }
-
-    #[doc(hidden)]
-    pub fn is_defer(&self, directives: &[Positioned<Directive>]) -> bool {
-        directives.iter().any(|d| d.name.node == "defer")
-    }
-
-    #[doc(hidden)]
-    pub fn is_stream(&self, directives: &[Positioned<Directive>]) -> bool {
-        directives.iter().any(|d| d.name.node == "stream")
     }
 }
 
@@ -524,7 +433,6 @@ impl<'a> ContextBase<'a, &'a Positioned<SelectionSet>> {
             inc_resolve_id: self.inc_resolve_id,
             schema_env: self.schema_env,
             query_env: self.query_env,
-            defer_list: self.defer_list,
         }
     }
 }
@@ -536,38 +444,17 @@ impl<'a> ContextBase<'a, &'a Positioned<Field>> {
         name: &str,
         default: Option<fn() -> T>,
     ) -> Result<T> {
-        let value = self.get_argument(name).cloned();
-        if let Some(default) = default {
-            if value.is_none() {
+        let value = self.item.node.get_argument(name).cloned();
+        if value.is_none() {
+            if let Some(default) = default {
                 return Ok(default());
             }
         }
-        let pos = value
-            .as_ref()
-            .map(|value| value.position())
-            .unwrap_or_default();
-        let value = match value {
-            Some(value) => {
-                let mut new_value = value.into_inner();
-                self.resolve_input_value(&mut new_value, pos)?;
-                Some(new_value)
-            }
-            None => None,
+        let (pos, value) = match value {
+            Some(value) => (value.pos, Some(self.resolve_input_value(value)?)),
+            None => (Pos::default(), None),
         };
-
-        match InputValueType::parse(value) {
-            Ok(res) => Ok(res),
-            Err(err) => Err(err.into_error(pos, T::qualified_type_name())),
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn result_name(&self) -> &str {
-        self.item
-            .alias
-            .as_ref()
-            .map(|alias| alias.as_str())
-            .unwrap_or_else(|| self.item.name.as_str())
+        InputValueType::parse(value).map_err(|e| e.into_error(pos, T::qualified_type_name()))
     }
 
     /// Get the position of the current field in the query code.
@@ -592,7 +479,6 @@ impl<'a> ContextBase<'a, &'a Positioned<Field>> {
     /// struct MyObj {
     ///     a: i32,
     ///     b: i32,
-    ///     #[field(ref)]
     ///     detail: Detail,
     /// }
     ///

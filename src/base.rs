@@ -1,9 +1,9 @@
+use crate::parser::types::Field;
 use crate::registry::Registry;
 use crate::{
     registry, Context, ContextSelectionSet, FieldResult, InputValueResult, Positioned, QueryError,
     Result, Value,
 };
-use async_graphql_parser::query::Field;
 use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
@@ -34,10 +34,10 @@ pub trait Type {
 
 /// Represents a GraphQL input value
 pub trait InputValueType: Type + Sized {
-    /// Parse from `Value`，None represent undefined.
+    /// Parse from `Value`. None represents undefined.
     fn parse(value: Option<Value>) -> InputValueResult<Self>;
 
-    /// Convert to `Value` for introspection
+    /// Convert to a `Value` for introspection.
     fn to_value(&self) -> Value;
 }
 
@@ -95,7 +95,7 @@ pub trait ObjectType: OutputValueType {
 
     /// Query entities with params
     async fn find_entity(&self, ctx: &Context<'_>, _params: &Value) -> Result<serde_json::Value> {
-        Err(QueryError::EntityNotFound.into_error(ctx.position()))
+        Err(QueryError::EntityNotFound.into_error(ctx.pos))
     }
 }
 
@@ -116,15 +116,16 @@ pub trait InputObjectType: InputValueType {}
 /// #[Scalar]
 /// impl ScalarType for MyInt {
 ///     fn parse(value: Value) -> InputValueResult<Self> {
-///         if let Value::Int(n) = value {
-///             Ok(MyInt(n as i32))
-///         } else {
-///             Err(InputValueError::ExpectedType(value))
+///         if let Value::Number(n) = &value {
+///             if let Some(n) = n.as_i64() {
+///                 return Ok(MyInt(n as i32));
+///             }
 ///         }
+///         Err(InputValueError::ExpectedType(value))
 ///     }
 ///
 ///     fn to_value(&self) -> Value {
-///         Value::Int(self.0)
+///         Value::Number(self.0.into())
 ///     }
 /// }
 /// ```
@@ -162,6 +163,13 @@ impl<T: OutputValueType + Send + Sync> OutputValueType for &T {
         field: &Positioned<Field>,
     ) -> Result<serde_json::Value> {
         T::resolve(*self, ctx, field).await
+    }
+}
+
+#[async_trait::async_trait]
+impl<T: ObjectType + Send + Sync> ObjectType for &T {
+    async fn resolve_field(&self, ctx: &Context<'_>) -> Result<serde_json::Value> {
+        T::resolve_field(*self, ctx).await
     }
 }
 
@@ -233,13 +241,9 @@ impl<T: OutputValueType + Sync> OutputValueType for FieldResult<T> {
     ) -> crate::Result<serde_json::Value> {
         match self {
             Ok(value) => Ok(OutputValueType::resolve(value, ctx, field).await?),
-            Err(err) => Err(err.clone().into_error_with_path(
-                field.position(),
-                match &ctx.path_node {
-                    Some(path) => path.to_json(),
-                    None => Vec::new(),
-                },
-            )),
+            Err(err) => Err(err
+                .clone()
+                .into_error_with_path(field.pos, ctx.path_node.as_ref())),
         }
     }
 }

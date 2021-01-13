@@ -67,13 +67,12 @@ pub async fn test_input_object_default_value() {
     }
 
     let schema = Schema::new(Root, EmptyMutation, EmptySubscription);
-    let query = format!(
-        r#"{{
-            a(input:{{e:777}}) {{
+    let query = r#"{
+            a(input:{e:777}) {
                 a b c d e
-            }}
-        }}"#
-    );
+            }
+        }"#
+    .to_owned();
     assert_eq!(
         schema.execute(&query).await.unwrap().data,
         serde_json::json!({
@@ -90,12 +89,11 @@ pub async fn test_input_object_default_value() {
 
 #[async_std::test]
 pub async fn test_inputobject_derive_and_item_attributes() {
-    use serde_derive::Deserialize;
+    use serde::Deserialize;
 
-    #[async_graphql::InputObject]
+    #[InputObject]
     #[derive(Deserialize, PartialEq, Debug)]
     struct MyInputObject {
-        #[field]
         #[serde(alias = "other")]
         real: i32,
     }
@@ -103,5 +101,195 @@ pub async fn test_inputobject_derive_and_item_attributes() {
     assert_eq!(
         serde_json::from_str::<MyInputObject>(r#"{ "other" : 100 }"#).unwrap(),
         MyInputObject { real: 100 }
+    );
+}
+
+#[async_std::test]
+pub async fn test_inputobject_flatten_recursive() {
+    #[derive(GQLInputObject, Debug, Eq, PartialEq)]
+    struct A {
+        a: i32,
+    }
+
+    #[derive(GQLInputObject, Debug, Eq, PartialEq)]
+    struct B {
+        #[field(default = 70)]
+        b: i32,
+        #[field(flatten)]
+        a_obj: A,
+    }
+
+    #[derive(GQLInputObject, Debug, Eq, PartialEq)]
+    struct MyInputObject {
+        #[field(flatten)]
+        b_obj: B,
+        c: i32,
+    }
+
+    assert_eq!(
+        MyInputObject::parse(Some(
+            Value::from_json(serde_json::json!({
+               "a": 10,
+               "b": 20,
+               "c": 30,
+            }))
+            .unwrap()
+        ))
+        .unwrap(),
+        MyInputObject {
+            b_obj: B {
+                b: 20,
+                a_obj: A { a: 10 }
+            },
+            c: 30,
+        }
+    );
+
+    assert_eq!(
+        MyInputObject {
+            b_obj: B {
+                b: 20,
+                a_obj: A { a: 10 }
+            },
+            c: 30,
+        }
+        .to_value(),
+        Value::from_json(serde_json::json!({
+           "a": 10,
+           "b": 20,
+           "c": 30,
+        }))
+        .unwrap()
+    );
+
+    struct Query;
+
+    #[Object]
+    impl Query {
+        async fn test(&self, input: MyInputObject) -> i32 {
+            input.c + input.b_obj.b + input.b_obj.a_obj.a
+        }
+
+        async fn test_with_default(
+            &self,
+            #[arg(default_with = r#"MyInputObject {
+            b_obj: B {
+                b: 2,
+                a_obj: A { a: 1 }
+            },
+            c: 3,
+        }"#)]
+            input: MyInputObject,
+        ) -> i32 {
+            input.c + input.b_obj.b + input.b_obj.a_obj.a
+        }
+    }
+
+    let schema = Schema::new(Query, EmptyMutation, EmptySubscription);
+    assert_eq!(
+        schema
+            .execute(
+                r#"{
+            test(input:{a:10, b: 20, c: 30})
+        }"#
+            )
+            .await
+            .unwrap()
+            .data,
+        serde_json::json!({
+            "test": 60,
+        })
+    );
+
+    assert_eq!(
+        schema
+            .execute(
+                r#"{
+            test(input:{a:10, c: 30})
+        }"#
+            )
+            .await
+            .unwrap()
+            .data,
+        serde_json::json!({
+            "test": 110,
+        })
+    );
+
+    assert_eq!(
+        schema
+            .execute(
+                r#"{
+            testWithDefault
+        }"#
+            )
+            .await
+            .unwrap()
+            .data,
+        serde_json::json!({
+            "testWithDefault": 6,
+        })
+    );
+}
+
+#[async_std::test]
+pub async fn test_inputobject_flatten_multiple() {
+    #[derive(GQLInputObject, Debug, Eq, PartialEq)]
+    struct A {
+        a: i32,
+    }
+
+    #[derive(GQLInputObject, Debug, Eq, PartialEq)]
+    struct B {
+        b: i32,
+    }
+
+    #[derive(GQLInputObject, Debug, Eq, PartialEq)]
+    struct C {
+        c: i32,
+    }
+
+    #[derive(GQLInputObject, Debug, Eq, PartialEq)]
+    struct ABC {
+        #[field(flatten)]
+        a: A,
+
+        #[field(flatten)]
+        b: B,
+
+        #[field(flatten)]
+        c: C,
+    }
+
+    assert_eq!(
+        ABC::parse(Some(
+            Value::from_json(serde_json::json!({
+               "a": 10,
+               "b": 20,
+               "c": 30,
+            }))
+            .unwrap()
+        ))
+        .unwrap(),
+        ABC {
+            a: A { a: 10 },
+            b: B { b: 20 },
+            c: C { c: 30 }
+        }
+    );
+
+    assert_eq!(
+        ABC {
+            a: A { a: 10 },
+            b: B { b: 20 },
+            c: C { c: 30 }
+        }
+        .to_value(),
+        Value::from_json(serde_json::json!({
+           "a": 10,
+           "b": 20,
+           "c": 30,
+        }))
+        .unwrap()
     );
 }

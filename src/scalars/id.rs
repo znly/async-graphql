@@ -2,6 +2,7 @@ use crate::{InputValueError, InputValueResult, ScalarType, Value};
 use async_graphql_derive::Scalar;
 #[cfg(feature = "bson")]
 use bson::oid::{self, ObjectId};
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::num::ParseIntError;
 use std::ops::{Deref, DerefMut};
@@ -9,7 +10,7 @@ use std::ops::{Deref, DerefMut};
 /// ID scalar
 ///
 /// The input is a `&str`, `String`, `usize` or `uuid::UUID`, and the output is a string.
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub struct ID(String);
 
 impl Deref for ID {
@@ -41,13 +42,21 @@ impl Into<String> for ID {
     }
 }
 
-impl TryFrom<ID> for usize {
-    type Error = ParseIntError;
+macro_rules! try_from_integers {
+    ($($ty:ty),*) => {
+        $(
+           impl TryFrom<ID> for $ty {
+                type Error = ParseIntError;
 
-    fn try_from(id: ID) -> std::result::Result<Self, Self::Error> {
-        id.0.parse()
-    }
+                fn try_from(id: ID) -> std::result::Result<Self, Self::Error> {
+                    id.0.parse()
+                }
+            }
+         )*
+    };
 }
+
+try_from_integers!(i8, i16, i32, i64, u8, u16, u32, u64, isize, usize);
 
 impl TryFrom<ID> for uuid::Uuid {
     type Error = uuid::Error;
@@ -76,7 +85,7 @@ impl PartialEq<&str> for ID {
 impl ScalarType for ID {
     fn parse(value: Value) -> InputValueResult<Self> {
         match value {
-            Value::Int(n) => Ok(ID(n.to_string())),
+            Value::Number(n) if n.is_i64() => Ok(ID(n.to_string())),
             Value::String(s) => Ok(ID(s)),
             _ => Err(InputValueError::ExpectedType(value)),
         }
@@ -84,7 +93,8 @@ impl ScalarType for ID {
 
     fn is_valid(value: &Value) -> bool {
         match value {
-            Value::Int(_) | Value::String(_) => true,
+            Value::Number(n) if n.is_i64() => true,
+            Value::String(_) => true,
             _ => false,
         }
     }

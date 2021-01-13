@@ -30,7 +30,7 @@
 * [Docs](https://docs.rs/async-graphql)
 * [GitHub repository](https://github.com/async-graphql/async-graphql)
 * [Cargo package](https://crates.io/crates/async-graphql)
-* Minimum supported Rust version: 1.42 or later
+* Minimum supported Rust version: 1.46 or later
 
 ## Safety
 
@@ -48,15 +48,15 @@ In accordance with Rust's policy on pre-`1.0.0` crates, we will try to keep brea
 
 ## Features
 
-* Fully support async/await
+* Fully supports async/await
 * Type safety
 * Rustfmt friendly (Procedural Macro)
-* Custom scalar
+* Custom scalars
 * Minimal overhead
 * Easy integration (hyper, actix_web, tide ...)
 * Upload files (Multipart request)
-* Subscription (WebSocket transport)
-* Custom extension
+* Subscriptions (WebSocket transport)
+* Custom extensions
 * Apollo Tracing extension
 * Limit query complexity/depth
 * Error Extensions

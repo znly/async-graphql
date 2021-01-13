@@ -23,11 +23,12 @@ impl MyObject {
 
     async fn value_from_db(
         &self,
-        ctx: &Context<'_'>,
+        ctx: &Context<'_>,
         #[arg(desc = "Id of object")] id: i64
     ) -> FieldResult<String> {
-        let conn = ctx.data::<DbPool>().take();
+        let conn = ctx.data::<DbPool>()?.take();
         Ok(conn.query_something(id)?.name)
     }
 }
 ```
+

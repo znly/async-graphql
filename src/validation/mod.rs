@@ -1,15 +1,16 @@
+#[cfg(test)]
+#[macro_use]
+mod test_harness;
+
 mod rules;
 mod suggestion;
 mod utils;
 mod visitor;
 mod visitors;
 
-#[cfg(test)]
-mod test_harness;
-
-use crate::parser::query::Document;
+use crate::parser::types::ExecutableDocument;
 use crate::registry::Registry;
-use crate::{CacheControl, Error, Result};
+use crate::{CacheControl, Error, Result, Variables};
 use visitor::{visit, VisitorContext, VisitorNil};
 
 pub struct CheckResult {
@@ -30,10 +31,11 @@ pub enum ValidationMode {
 
 pub fn check_rules(
     registry: &Registry,
-    doc: &Document,
+    doc: &ExecutableDocument,
+    variables: Option<&Variables>,
     mode: ValidationMode,
 ) -> Result<CheckResult> {
-    let mut ctx = VisitorContext::new(registry, doc);
+    let mut ctx = VisitorContext::new(registry, doc, variables);
     let mut cache_control = CacheControl::default();
     let mut complexity = 0;
     let mut depth = 0;

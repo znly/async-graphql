@@ -5,7 +5,6 @@ mod floats;
 mod id;
 mod integers;
 mod json;
-mod naive_date;
 mod naive_time;
 mod string;
 mod uuid;
@@ -19,14 +18,14 @@ mod url;
 
 pub use any::Any;
 pub use id::ID;
-pub use json::Json;
+pub use json::{Json, OutputJson};
 
 #[cfg(test)]
 mod tests {
     use super::ID;
     use crate::Type;
     use bson::oid::ObjectId;
-    use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+    use chrono::{DateTime, FixedOffset, Local, NaiveDate, NaiveTime, Utc};
     use uuid::Uuid;
 
     #[test]
@@ -58,6 +57,18 @@ mod tests {
         assert_eq!(<DateTime::<Utc> as Type>::type_name(), "DateTime");
         assert_eq!(
             <DateTime::<Utc> as Type>::qualified_type_name(),
+            "DateTime!"
+        );
+
+        assert_eq!(<DateTime::<Local> as Type>::type_name(), "DateTime");
+        assert_eq!(
+            <DateTime::<Local> as Type>::qualified_type_name(),
+            "DateTime!"
+        );
+
+        assert_eq!(<DateTime::<FixedOffset> as Type>::type_name(), "DateTime");
+        assert_eq!(
+            <DateTime::<FixedOffset> as Type>::qualified_type_name(),
             "DateTime!"
         );
 

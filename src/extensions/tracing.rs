@@ -1,82 +1,72 @@
 use crate::extensions::{Extension, ResolveInfo};
-use crate::QueryPathSegment;
-use parking_lot::Mutex;
+use crate::Variables;
 use std::collections::BTreeMap;
-use tracing::{span, Id, Level};
-
-#[derive(Default)]
-struct Inner {
-    root_id: Option<Id>,
-    fields: BTreeMap<usize, Id>,
-}
+use tracing::{event, span, Id, Level};
+use uuid::Uuid;
 
 /// Tracing extension
 ///
 /// # References
 ///
 /// https://crates.io/crates/tracing
+#[derive(Default)]
 pub struct Tracing {
-    inner: Mutex<Inner>,
-}
-
-impl Default for Tracing {
-    fn default() -> Self {
-        Self {
-            inner: Default::default(),
-        }
-    }
+    root_id: Option<Id>,
+    fields: BTreeMap<usize, Id>,
 }
 
 impl Extension for Tracing {
-    fn parse_start(&self, query_source: &str) {
-        let root_span = span!(target: "async-graphql", parent:None, Level::INFO, "query", source = query_source);
+    #[allow(clippy::deref_addrof)]
+    fn parse_start(&mut self, query_source: &str, variables: &Variables) {
+        let root_span: tracing::Span = span!(
+            target: "async_graphql::graphql",
+            parent:None,
+            Level::INFO,
+            "graphql",
+            id = %Uuid::new_v4().to_string(),
+        );
+
         if let Some(id) = root_span.id() {
             tracing::dispatcher::get_default(|d| d.enter(&id));
-            self.inner.lock().root_id.replace(id);
+            self.root_id.replace(id);
         }
+
+        event!(
+            target: "async_graphql::query",
+            Level::DEBUG,
+            %variables,
+            query = %query_source
+        );
     }
 
-    fn execution_end(&self) {
-        if let Some(id) = self.inner.lock().root_id.take() {
+    fn execution_end(&mut self) {
+        if let Some(id) = self.root_id.take() {
             tracing::dispatcher::get_default(|d| d.exit(&id));
         }
     }
 
-    fn resolve_start(&self, info: &ResolveInfo<'_>) {
-        let mut inner = self.inner.lock();
+    fn resolve_start(&mut self, info: &ResolveInfo<'_>) {
         let parent_span = info
             .resolve_id
             .parent
-            .and_then(|id| inner.fields.get(&id))
+            .and_then(|id| self.fields.get(&id))
+            .or_else(|| self.root_id.as_ref())
             .cloned();
-        let span = match &info.path_node.segment {
-            QueryPathSegment::Index(idx) => span!(
-                target: "async-graphql",
-                parent: parent_span,
-                Level::INFO,
-                "field",
-                index = *idx,
-                parent_type = info.parent_type,
-                return_type = info.return_type
-            ),
-            QueryPathSegment::Name(name) => span!(
-                target: "async-graphql",
-                parent: parent_span,
-                Level::INFO,
-                "field",
-                name = name,
-                parent_type = info.parent_type,
-                return_type = info.return_type
-            ),
-        };
+        let span = span!(
+            target: "async_graphql::field",
+            parent: parent_span,
+            Level::INFO,
+            "field",
+            path = %info.path_node,
+        );
         if let Some(id) = span.id() {
             tracing::dispatcher::get_default(|d| d.enter(&id));
-            inner.fields.insert(info.resolve_id.current, id);
+            self.fields.insert(info.resolve_id.current, id);
         }
     }
 
-    fn resolve_end(&self, info: &ResolveInfo<'_>) {
-        if let Some(id) = self.inner.lock().fields.remove(&info.resolve_id.current) {
+    fn resolve_end(&mut self, info: &ResolveInfo<'_>) {
+        if let Some(id) = self.fields.remove(&info.resolve_id.current) {
             tracing::dispatcher::get_default(|d| d.exit(&id));
         }
     }

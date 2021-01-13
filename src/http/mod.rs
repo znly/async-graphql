@@ -10,7 +10,7 @@ use itertools::Itertools;
 
 pub use graphiql_source::graphiql_source;
 pub use multipart_stream::multipart_stream;
-pub use playground_source::playground_source;
+pub use playground_source::{playground_source, GraphQLPlaygroundConfig};
 pub use stream_body::StreamBody;
 
 use crate::query::{IntoQueryBuilder, IntoQueryBuilderOpts};
@@ -18,7 +18,7 @@ use crate::{
     Error, ParseRequestError, Pos, QueryBuilder, QueryError, QueryResponse, Result, Variables,
 };
 use serde::ser::{SerializeMap, SerializeSeq};
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 /// Deserializable GraphQL Request object
 #[derive(Deserialize, Clone, PartialEq, Debug)]
@@ -42,12 +42,10 @@ impl IntoQueryBuilder for GQLRequest {
     ) -> std::result::Result<QueryBuilder, ParseRequestError> {
         let mut builder = QueryBuilder::new(self.query);
         if let Some(operation_name) = self.operation_name {
-            builder = builder.operator_name(operation_name);
+            builder = builder.operation_name(operation_name);
         }
         if let Some(variables) = self.variables {
-            if let Ok(variables) = Variables::parse_from_json(variables) {
-                builder = builder.variables(variables);
-            }
+            builder = builder.variables(Variables::parse_from_json(variables));
         }
         Ok(builder)
     }
@@ -61,14 +59,6 @@ impl Serialize for GQLResponse {
         match &self.0 {
             Ok(res) => {
                 let mut map = serializer.serialize_map(None)?;
-                if let Some(label) = &res.label {
-                    map.serialize_key("label")?;
-                    map.serialize_value(label)?;
-                }
-                if let Some(path) = &res.path {
-                    map.serialize_key("path")?;
-                    map.serialize_value(path)?;
-                }
                 map.serialize_key("data")?;
                 map.serialize_value(&res.data)?;
                 if res.extensions.is_some() {
@@ -219,8 +209,6 @@ mod tests {
     #[test]
     fn test_response_data() {
         let resp = GQLResponse(Ok(QueryResponse {
-            label: None,
-            path: None,
             data: json!({"ok": true}),
             extensions: None,
             cache_control: Default::default(),
@@ -251,7 +239,7 @@ mod tests {
             },
         };
 
-        let resp = GQLResponse(Err(err.into()));
+        let resp = GQLResponse(Err(err));
 
         assert_eq!(
             serde_json::to_value(resp).unwrap(),

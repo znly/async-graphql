@@ -1,18 +1,17 @@
 use crate::context::Data;
-use crate::extensions::{BoxExtension, Extension, Extensions};
+use crate::extensions::{BoxExtension, ErrorLogger, Extension, Extensions};
 use crate::model::__DirectiveLocation;
 use crate::parser::parse_query;
-use crate::query::{QueryBuilder, StreamResponse};
+use crate::parser::types::{ExecutableDocument, OperationType};
+use crate::query::QueryBuilder;
 use crate::registry::{MetaDirective, MetaInputValue, Registry};
-use crate::subscription::{create_connection, create_subscription_stream, SubscriptionTransport};
+use crate::subscription::{create_connection, create_subscription_stream, ConnectionTransport};
 use crate::types::QueryRoot;
 use crate::validation::{check_rules, CheckResult, ValidationMode};
 use crate::{
     CacheControl, Error, ObjectType, Pos, QueryEnv, QueryError, QueryResponse, Result,
     SubscriptionType, Type, Variables, ID,
 };
-use async_graphql_parser::query::{Document, OperationType};
-use bytes::Bytes;
 use futures::channel::mpsc;
 use futures::Stream;
 use indexmap::map::IndexMap;
@@ -39,31 +38,33 @@ pub struct SchemaBuilder<Query, Mutation, Subscription> {
 impl<Query: ObjectType, Mutation: ObjectType, Subscription: SubscriptionType>
     SchemaBuilder<Query, Mutation, Subscription>
 {
-    /// You can use this function to register types that are not directly referenced.
+    /// Manually register a type in the schema.
+    ///
+    /// You can use this function to register schema types that are not directly referenced.
     pub fn register_type<T: Type>(mut self) -> Self {
         T::create_type_info(&mut self.registry);
         self
     }
 
-    /// Disable introspection query
+    /// Disable introspection queries.
     pub fn disable_introspection(mut self) -> Self {
         self.query.disable_introspection = true;
         self
     }
 
-    /// Set limit complexity, Default no limit.
+    /// Set the maximum complexity a query can have. By default there is no limit.
     pub fn limit_complexity(mut self, complexity: usize) -> Self {
         self.complexity = Some(complexity);
         self
     }
 
-    /// Set limit complexity, Default no limit.
+    /// Set the maximum depth a query can have. By default there is no limit.
     pub fn limit_depth(mut self, depth: usize) -> Self {
         self.depth = Some(depth);
         self
     }
 
-    /// Add an extension
+    /// Add an extension to the schema.
     pub fn extension<F: Fn() -> E + Send + Sync + 'static, E: Extension>(
         mut self,
         extension_factory: F,
@@ -73,7 +74,7 @@ impl<Query: ObjectType, Mutation: ObjectType, Subscription: SubscriptionType>
         self
     }
 
-    /// Add a global data that can be accessed in the `Schema`, you access it with `Context::data`.
+    /// Add a global data that can be accessed in the `Schema`. You access it with `Context::data`.
     pub fn data<D: Any + Send + Sync>(mut self, data: D) -> Self {
         self.data.insert(data);
         self
@@ -144,12 +145,29 @@ pub struct SchemaInner<Query, Mutation, Subscription> {
     pub(crate) env: SchemaEnv,
 }
 
-/// GraphQL schema
+/// GraphQL schema.
+///
+/// Cloning a schema is cheap, so it can be easily shared.
 pub struct Schema<Query, Mutation, Subscription>(Arc<SchemaInner<Query, Mutation, Subscription>>);
 
 impl<Query, Mutation, Subscription> Clone for Schema<Query, Mutation, Subscription> {
     fn clone(&self) -> Self {
         Schema(self.0.clone())
+    }
+}
+
+impl<Query, Mutation, Subscription> Default for Schema<Query, Mutation, Subscription>
+where
+    Query: Default + ObjectType + Send + Sync + 'static,
+    Mutation: Default + ObjectType + Send + Sync + 'static,
+    Subscription: Default + SubscriptionType + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Schema::new(
+            Query::default(),
+            Mutation::default(),
+            Subscription::default(),
+        )
     }
 }
 
@@ -242,15 +260,8 @@ where
         });
 
         registry.add_directive(MetaDirective {
-            name: "defer",
-            description: None,
-            locations: vec![__DirectiveLocation::FIELD],
-            args: Default::default(),
-        });
-
-        registry.add_directive(MetaDirective {
-            name: "stream",
-            description: None,
+            name: "ifdef",
+            description: Some("Directs the executor to query only when the field exists."),
             locations: vec![__DirectiveLocation::FIELD],
             args: Default::default(),
         });
@@ -301,56 +312,54 @@ where
         QueryBuilder::new(query_source).execute(self).await
     }
 
-    /// Execute the query without create the `QueryBuilder`, returns a stream, the first result being the query result,
-    /// followed by the incremental result. Only when there are `@defer` and `@stream` directives
-    /// in the query will there be subsequent incremental results.
-    pub async fn execute_stream(&self, query_source: &str) -> StreamResponse {
-        QueryBuilder::new(query_source).execute_stream(self).await
-    }
-
     pub(crate) fn prepare_query(
         &self,
         source: &str,
+        variables: &Variables,
         query_extensions: &[Box<dyn Fn() -> BoxExtension + Send + Sync>],
-    ) -> Result<(Document, CacheControl, Extensions)> {
+    ) -> Result<(ExecutableDocument, CacheControl, spin::Mutex<Extensions>)> {
         // create extension instances
-        let extensions = Extensions(
+        let extensions = spin::Mutex::new(Extensions(
             self.0
                 .extensions
                 .iter()
                 .chain(query_extensions)
                 .map(|factory| factory())
                 .collect_vec(),
-        );
+        ));
 
-        extensions.parse_start(source);
-        let document = extensions.log_error(parse_query(source).map_err(Into::<Error>::into))?;
-        extensions.parse_end(source, &document);
+        extensions.lock().parse_start(source, &variables);
+        let document = parse_query(source)
+            .map_err(Into::<Error>::into)
+            .log_error(&extensions)?;
+        extensions.lock().parse_end(&document);
 
         // check rules
-        extensions.validation_start();
+        extensions.lock().validation_start();
         let CheckResult {
             cache_control,
             complexity,
             depth,
-        } = extensions.log_error(check_rules(
+        } = check_rules(
             &self.env.registry,
             &document,
+            Some(&variables),
             self.validation_mode,
-        ))?;
-        extensions.validation_end();
+        )
+        .log_error(&extensions)?;
+        extensions.lock().validation_end();
 
         // check limit
         if let Some(limit_complexity) = self.complexity {
             if complexity > limit_complexity {
-                return extensions
-                    .log_error(Err(QueryError::TooComplex.into_error(Pos::default())));
+                return Err(QueryError::TooComplex.into_error(Pos::default()))
+                    .log_error(&extensions);
             }
         }
 
         if let Some(limit_depth) = self.depth {
             if depth > limit_depth {
-                return extensions.log_error(Err(QueryError::TooDeep.into_error(Pos::default())));
+                return Err(QueryError::TooDeep.into_error(Pos::default())).log_error(&extensions);
             }
         }
 
@@ -365,21 +374,25 @@ where
         variables: Variables,
         ctx_data: Option<Arc<Data>>,
     ) -> Result<impl Stream<Item = Result<serde_json::Value>> + Send> {
-        let (mut document, _, extensions) = self.prepare_query(source, &Vec::new())?;
+        let (document, _, extensions) = self.prepare_query(source, &variables, &Vec::new())?;
 
-        if !document.retain_operation(operation_name) {
-            return extensions.log_error(if let Some(name) = operation_name {
-                Err(QueryError::UnknownOperationNamed {
-                    name: name.to_string(),
+        let document = match document.into_data(operation_name) {
+            Some(document) => document,
+            None => {
+                return if let Some(name) = operation_name {
+                    Err(QueryError::UnknownOperationNamed {
+                        name: name.to_string(),
+                    }
+                    .into_error(Pos::default()))
+                } else {
+                    Err(QueryError::MissingOperation.into_error(Pos::default()))
                 }
-                .into_error(Pos::default()))
-            } else {
-                Err(QueryError::MissingOperation.into_error(Pos::default()))
-            });
-        }
+                .log_error(&extensions)
+            }
+        };
 
-        if document.current_operation().ty != OperationType::Subscription {
-            return extensions.log_error(Err(QueryError::NotSupported.into_error(Pos::default())));
+        if document.operation.node.ty != OperationType::Subscription {
+            return Err(QueryError::NotSupported.into_error(Pos::default())).log_error(&extensions);
         }
 
         let resolve_id = AtomicUsize::default();
@@ -392,24 +405,23 @@ where
         let ctx = env.create_context(
             &self.env,
             None,
-            &env.document.current_operation().selection_set,
+            &env.document.operation.node.selection_set,
             &resolve_id,
-            None,
         );
         let mut streams = Vec::new();
-        ctx.query_env
-            .extensions
-            .log_error(create_subscription_stream(self, env.clone(), &ctx, &mut streams).await)?;
+        create_subscription_stream(self, env.clone(), &ctx, &mut streams)
+            .await
+            .log_error(&ctx.query_env.extensions)?;
         Ok(futures::stream::select_all(streams))
     }
 
     /// Create subscription connection, returns `Sink` and `Stream`.
-    pub fn subscription_connection<T: SubscriptionTransport>(
+    pub fn subscription_connection<T: ConnectionTransport>(
         &self,
         transport: T,
     ) -> (
-        mpsc::UnboundedSender<Bytes>,
-        impl Stream<Item = Bytes> + Unpin,
+        mpsc::UnboundedSender<Vec<u8>>,
+        impl Stream<Item = Vec<u8>> + Unpin,
     ) {
         create_connection(self.clone(), transport)
     }

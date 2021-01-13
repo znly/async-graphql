@@ -6,21 +6,23 @@ use async_graphql_derive::Scalar;
 impl ScalarType for f32 {
     fn parse(value: Value) -> InputValueResult<Self> {
         match value {
-            Value::Int(n) => Ok(n as Self),
-            Value::Float(n) => Ok(n as Self),
+            Value::Number(n) => Ok(n
+                .as_f64()
+                .ok_or_else(|| InputValueError::from("Invalid number"))?
+                as Self),
             _ => Err(InputValueError::ExpectedType(value)),
         }
     }
 
     fn is_valid(value: &Value) -> bool {
         match value {
-            Value::Int(_) | Value::Float(_) => true,
+            Value::Number(_) => true,
             _ => false,
         }
     }
 
     fn to_value(&self) -> Value {
-        Value::Float(*self as f64)
+        Value::Number(serde_json::Number::from_f64(*self as f64).unwrap())
     }
 }
 
@@ -29,20 +31,22 @@ impl ScalarType for f32 {
 impl ScalarType for f64 {
     fn parse(value: Value) -> InputValueResult<Self> {
         match value {
-            Value::Int(n) => Ok(n as Self),
-            Value::Float(n) => Ok(n as Self),
+            Value::Number(n) => Ok(n
+                .as_f64()
+                .ok_or_else(|| InputValueError::from("Invalid number"))?
+                as Self),
             _ => Err(InputValueError::ExpectedType(value)),
         }
     }
 
     fn is_valid(value: &Value) -> bool {
         match value {
-            Value::Int(_) | Value::Float(_) => true,
+            Value::Number(_) => true,
             _ => false,
         }
     }
 
     fn to_value(&self) -> Value {
-        Value::Float(*self as f64)
+        Value::Number(serde_json::Number::from_f64(*self as f64).unwrap())
     }
 }

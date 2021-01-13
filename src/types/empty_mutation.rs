@@ -1,8 +1,8 @@
+use crate::parser::types::Field;
 use crate::{
     registry, Context, ContextSelectionSet, Error, ObjectType, OutputValueType, Positioned,
     QueryError, Result, Type,
 };
-use async_graphql_parser::query::Field;
 use std::borrow::Cow;
 
 /// Empty mutation
@@ -19,10 +19,9 @@ use std::borrow::Cow;
 /// #[Object]
 /// impl QueryRoot {}
 ///
-/// fn main() {
-///     let schema = Schema::new(QueryRoot, EmptyMutation, EmptySubscription);
-/// }
+/// let schema = Schema::new(QueryRoot, EmptyMutation, EmptySubscription);
 /// ```
+#[derive(Default, Copy, Clone)]
 pub struct EmptyMutation;
 
 impl Type for EmptyMutation {
@@ -61,7 +60,7 @@ impl OutputValueType for EmptyMutation {
         field: &Positioned<Field>,
     ) -> Result<serde_json::Value> {
         Err(Error::Query {
-            pos: field.position(),
+            pos: field.pos,
             path: None,
             err: QueryError::NotConfiguredMutations,
         })

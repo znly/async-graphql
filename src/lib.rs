@@ -34,15 +34,15 @@
 //!
 //! ## Features
 //!
-//! * Fully support async/await
+//! * Fully supports async/await
 //! * Type safety
 //! * Rustfmt friendly (Procedural Macro)
-//! * Custom scalar
+//! * Custom scalars
 //! * Minimal overhead
 //! * Easy integration (hyper, actix_web, tide ...)
-//! * Upload files (Multipart request)
-//! * Subscription (WebSocket transport)
-//! * Custom extension
+//! * File upload (Multipart request)
+//! * Subscriptions (WebSocket transport)
+//! * Custom extensions
 //! * Apollo Tracing extension
 //! * Limit query complexity/depth
 //! * Error Extensions
@@ -89,22 +89,14 @@
 //! cargo bench
 //! ```
 //!
-//! Now HTML report is available at `benchmark/target/criterion/report`
+//! Now a HTML report is available at `benchmark/target/criterion/report`.
 //!
 
 #![warn(missing_docs)]
-#![allow(clippy::needless_doctest_main)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::trivially_copy_pass_by_ref)]
 #![recursion_limit = "256"]
 #![forbid(unsafe_code)]
-
-#[macro_use]
-extern crate thiserror;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate log;
 
 mod base;
 mod context;
@@ -128,8 +120,6 @@ pub mod validators;
 pub use async_graphql_parser as parser;
 
 #[doc(hidden)]
-pub use anyhow;
-#[doc(hidden)]
 pub use async_trait;
 #[doc(hidden)]
 pub use futures;
@@ -149,18 +139,18 @@ pub use error::{
     ParseRequestError, QueryError, ResultExt, RuleError,
 };
 pub use look_ahead::Lookahead;
-pub use parser::{Pos, Positioned, Value};
-pub use query::{
-    IntoQueryBuilder, IntoQueryBuilderOpts, QueryBuilder, QueryResponse, StreamResponse,
-};
+pub use parser::{types::ConstValue as Value, Pos, Positioned};
+pub use query::{IntoQueryBuilder, IntoQueryBuilderOpts, QueryBuilder, QueryResponse};
 pub use registry::CacheControl;
-pub use scalars::{Any, Json, ID};
+pub use scalars::{Any, Json, OutputJson, ID};
 pub use schema::{Schema, SchemaBuilder, SchemaEnv};
+pub use serde_json::Number;
 pub use subscription::{
-    SimpleBroker, SubscriptionStreams, SubscriptionTransport, WebSocketTransport,
+    ConnectionTransport, SimpleBroker, SubscriptionStreams, WebSocketTransport,
 };
 pub use types::{
-    connection, Deferred, EmptyMutation, EmptySubscription, MaybeUndefined, Streamed, Upload,
+    connection, EmptyMutation, EmptySubscription, MaybeUndefined, MergedObject,
+    MergedObjectSubscriptionTail, MergedObjectTail, Upload,
 };
 pub use validation::ValidationMode;
 
@@ -170,8 +160,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 // internal types
 #[doc(hidden)]
 pub use context::ContextSelectionSet;
+
 #[doc(hidden)]
 pub mod registry;
+
 #[doc(hidden)]
 pub use base::{BoxFieldFuture, InputObjectType, InputValueType, ObjectType, OutputValueType};
 #[doc(hidden)]
@@ -181,7 +173,11 @@ pub use subscription::SubscriptionType;
 #[doc(hidden)]
 pub use types::{EnumItem, EnumType};
 
-/// Define a GraphQL object
+/// Define a GraphQL object with methods
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_complex_object.html).*
+///
+/// All methods are converted to camelCase.
 ///
 /// # Macro parameters
 ///
@@ -208,23 +204,26 @@ pub use types::{EnumItem, EnumType};
 ///
 /// # Field argument parameters
 ///
-/// | Attribute   | description               | Type     | Optional |
-/// |-------------|---------------------------|----------|----------|
-/// | name        | Argument name             | string   | Y        |
-/// | desc        | Argument description      | string   | Y        |
-/// | default     | Argument default value    | string   | Y        |
-/// | validator   | Input value validator     | [`InputValueValidator`](validators/trait.InputValueValidator.html) | Y        |
+/// | Attribute    | description                              | Type        | Optional |
+/// |--------------|------------------------------------------|------------ |----------|
+/// | name         | Argument name                            | string      | Y        |
+/// | desc         | Argument description                     | string      | Y        |
+/// | default      | Use `Default::default` for default value | none        | Y        |
+/// | default      | Argument default value                   | literal     | Y        |
+/// | default_with | Expression to generate default value     | code string | Y        |
+/// | validator    | Input value validator                    | [`InputValueValidator`](validators/trait.InputValueValidator.html) | Y        |
 ///
-/// # The field returns the value type
+/// # Valid field return types
 ///
-/// - A scalar value, such as `i32`, `bool`
-/// - Borrowing of scalar values, such as `&i32`, `&bool`
-/// - Vec<T>, such as `Vec<i32>`
-/// - Slice<T>, such as `&[i32]`
-/// - Option<T>, such as `Option<i32>`
-/// - Object and &Object
-/// - Enum
-/// - FieldResult<T, E>, such as `FieldResult<i32, E>`
+/// - Scalar values, such as `i32` and `bool`. `usize`, `isize`, `u128` and `i128` are not
+/// supported
+/// - `Vec<T>`, such as `Vec<i32>`
+/// - Slices, such as `&[i32]`
+/// - `Option<T>`, such as `Option<i32>`
+/// - GraphQL objects.
+/// - GraphQL enums.
+/// - References to any of the above types, such as `&i32` or `&Option<String>`.
+/// - `FieldResult<T, E>`, such as `FieldResult<i32, E>`
 ///
 /// # Context
 ///
@@ -268,9 +267,8 @@ pub use types::{EnumItem, EnumType};
 ///     }
 /// }
 ///
-/// #[async_std::main]
-/// async fn main() {
-///     let schema = Schema::new(QueryRoot{ value: 10 }, EmptyMutation, EmptySubscription);
+/// async_std::task::block_on(async move {
+///     let schema = Schema::new(QueryRoot { value: 10 }, EmptyMutation, EmptySubscription);
 ///     let res = schema.execute(r#"{
 ///         value
 ///         valueRef
@@ -285,13 +283,17 @@ pub use types::{EnumItem, EnumType};
 ///         "valueWithArg1": 1,
 ///         "valueWithArg2": 99
 ///     }));
-/// }
+/// });
 /// ```
 pub use async_graphql_derive::Object;
 
-/// Define a GraphQL object
+/// Define a GraphQL object with fields
 ///
-/// Similar to `Object`, but defined on a structure that automatically generates getters for all fields.
+/// You can also [derive this](derive.GQLSimpleObject.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_simple_object.html).*
+///
+/// Similar to `Object`, but defined on a structure that automatically generates getters for all fields. For a list of valid field types, see [`Object`](attr.Object.html). All fields are converted to camelCase.
 ///
 /// # Macro parameters
 ///
@@ -308,11 +310,13 @@ pub use async_graphql_derive::Object;
 /// | name          | Field name                | string   | Y        |
 /// | desc          | Field description         | string   | Y        |
 /// | deprecation   | Field deprecation reason  | string   | Y        |
+/// | owned         | Field resolver return a ownedship value  | bool   | Y        |
 /// | cache_control | Field cache control       | [`CacheControl`](struct.CacheControl.html) | Y        |
 /// | external      | Mark a field as owned by another service. This allows service A to use fields from service B while also knowing at runtime the types of that field. | bool | Y |
 /// | provides      | Annotate the expected returned fieldset from a field on a base type that is guaranteed to be selectable by the gateway. | string | Y |
 /// | requires      | Annotate the required input fieldset from a base type for a resolver. It is used to develop a query plan where the required fields may not be needed by the client, but the service may need additional information from other services. | string | Y |
 /// | guard         | Field of guard            | [`Guard`](guard/trait.Guard.html) | Y        |
+/// | feature       | It's like a `#[cfg(feature = "foo")]` attribute but instead of not compiling this field it will just return a proper `FieldError` to tell you this feature is not enabled | string ("feature1,feature2") | Y |
 ///
 /// # Examples
 ///
@@ -324,18 +328,79 @@ pub use async_graphql_derive::Object;
 ///     value: i32,
 /// }
 ///
-/// #[async_std::main]
-/// async fn main() {
+/// async_std::task::block_on(async move {
 ///     let schema = Schema::new(QueryRoot{ value: 10 }, EmptyMutation, EmptySubscription);
 ///     let res = schema.execute("{ value }").await.unwrap().data;
 ///     assert_eq!(res, serde_json::json!({
 ///         "value": 10,
 ///     }));
-/// }
+/// });
 /// ```
 pub use async_graphql_derive::SimpleObject;
 
+/// Derive a GraphQL enum
+///
+/// You can also [use an attribute](attr.Enum.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_enum.html).*
+///
+/// All variants are converted to SCREAMING_SNAKE_CASE.
+///
+/// # Examples
+///
+/// ```rust
+/// use async_graphql::*;
+///
+/// #[derive(GQLEnum, Eq, PartialEq, Copy, Clone)]
+/// #[graphql(name = "Enum1")]
+/// enum MyEnum {
+///     One,
+///     Two,
+/// }
+/// ```
+pub use async_graphql_derive::GQLEnum;
+
+/// Derive a GraphQL input object
+///
+/// You can also [use an attribute](attr.InputObject.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_input_object.html).*
+///
+/// # Examples
+///
+/// ```rust
+/// use async_graphql::*;
+/// #[derive(GQLInputObject)]
+/// #[graphql(name = "MyInput1")]
+/// struct MyInput {
+///     value: i32,
+/// }
+/// ```
+pub use async_graphql_derive::GQLInputObject;
+
+/// Derive a GraphQL object with fields
+///
+/// You can also [use an attribute](attr.SimpleObject.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_simple_object.html).*
+///
+/// # Examples
+///
+/// ```rust
+/// use async_graphql::*;
+/// #[derive(GQLSimpleObject)]
+/// #[graphql(name = "MyObj1")]
+/// struct MyObj {
+///     value: i32,
+/// }
+/// ```
+pub use async_graphql_derive::GQLSimpleObject;
+
 /// Define a GraphQL enum
+///
+/// You can also [derive this](derive.GQLEnum.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_enum.html).*
 ///
 /// # Macro parameters
 ///
@@ -351,7 +416,6 @@ pub use async_graphql_derive::SimpleObject;
 /// | name        | Item name                 | string   | Y        |
 /// | desc        | Item description          | string   | Y        |
 /// | deprecation | Item deprecation reason   | string   | Y        |
-/// | ref         | The resolver function returns a borrowing value  | bool   | Y        |
 ///
 /// # Examples
 ///
@@ -382,16 +446,19 @@ pub use async_graphql_derive::SimpleObject;
 ///     }
 /// }
 ///
-/// #[async_std::main]
-/// async fn main() {
+/// async_std::task::block_on(async move {
 ///     let schema = Schema::new(QueryRoot{ value1: MyEnum::A, value2: MyEnum::B }, EmptyMutation, EmptySubscription);
 ///     let res = schema.execute("{ value1 value2 }").await.unwrap().data;
 ///     assert_eq!(res, serde_json::json!({ "value1": "A", "value2": "b" }));
-/// }
+/// });
 /// ```
 pub use async_graphql_derive::Enum;
 
 /// Define a GraphQL input object
+///
+/// You can also [derive this](derive.GQLInputObject.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_input_object.html).*
 ///
 /// # Macro parameters
 ///
@@ -402,12 +469,15 @@ pub use async_graphql_derive::Enum;
 ///
 /// # Field parameters
 ///
-/// | Attribute   | description               | Type     | Optional |
-/// |-------------|---------------------------|----------|----------|
-/// | name        | Field name                | string   | Y        |
-/// | desc        | Field description         | string   | Y        |
-/// | default     | Field default value       | string   | Y        |
-/// | validator   | Input value validator     | [`InputValueValidator`](validators/trait.InputValueValidator.html) | Y        |
+/// | Attribute    | description                              | Type     | Optional |
+/// |--------------|------------------------------------------|----------|----------|
+/// | name         | Field name                               | string   | Y        |
+/// | desc         | Field description                        | string   | Y        |
+/// | default      | Use `Default::default` for default value | none        | Y        |
+/// | default      | Argument default value                   | literal     | Y        |
+/// | default_with | Expression to generate default value     | code string | Y        |
+/// | validator    | Input value validator                    | [`InputValueValidator`](validators/trait.InputValueValidator.html) | Y        |
+/// | flatten      | Similar to serde (flatten)               | boolean | Y |
 ///
 /// # Examples
 ///
@@ -431,8 +501,7 @@ pub use async_graphql_derive::Enum;
 ///     }
 /// }
 ///
-/// #[async_std::main]
-/// async fn main() {
+/// async_std::task::block_on(async move {
 ///     let schema = Schema::new(QueryRoot, EmptyMutation, EmptySubscription);
 ///     let res = schema.execute(r#"
 ///     {
@@ -440,11 +509,15 @@ pub use async_graphql_derive::Enum;
 ///         value2: value(input:{a:9})
 ///     }"#).await.unwrap().data;
 ///     assert_eq!(res, serde_json::json!({ "value1": 27, "value2": 90 }));
-/// }
+/// });
 /// ```
 pub use async_graphql_derive::InputObject;
 
 /// Define a GraphQL interface
+///
+/// You can also [derive this](derive.GQLInterface.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_interface.html).*
 ///
 /// # Macro parameters
 ///
@@ -466,12 +539,14 @@ pub use async_graphql_derive::InputObject;
 ///
 /// # Field argument parameters
 ///
-/// | Attribute   | description               | Type     | Optional |
-/// |-------------|---------------------------|----------|----------|
-/// | name        | Argument name             | string   | N        |
-/// | type        | Argument type             | string   | N        |
-/// | desc        | Argument description      | string   | Y        |
-/// | default     | Argument default value    | string   | Y        |
+/// | Attribute    | description                              | Type        | Optional |
+/// |--------------|------------------------------------------|-------------|----------|
+/// | name         | Argument name                            | string      | N        |
+/// | type         | Argument type                            | string      | N        |
+/// | desc         | Argument description                     | string      | Y        |
+/// | default      | Use `Default::default` for default value | none        | Y        |
+/// | default      | Argument default value                   | literal     | Y        |
+/// | default_with | Expression to generate default value     | code string | Y        |
 ///
 /// # Define an interface
 ///
@@ -502,8 +577,8 @@ pub use async_graphql_derive::InputObject;
 /// #[Object]
 /// impl TypeA {
 ///     /// Returns data borrowed from the context
-///     async fn value_a<'a>(&self, ctx: &'a Context<'_>) -> &'a str {
-///         ctx.data::<String>().as_str()
+///     async fn value_a<'a>(&self, ctx: &'a Context<'_>) -> FieldResult<&'a str> {
+///         Ok(ctx.data::<String>()?.as_str())
 ///     }
 ///
 ///     /// Returns data borrowed self
@@ -544,8 +619,7 @@ pub use async_graphql_derive::InputObject;
 ///     }
 /// }
 ///
-/// #[async_std::main]
-/// async fn main() {
+/// async_std::task::block_on(async move {
 ///     let schema = Schema::build(QueryRoot, EmptyMutation, EmptySubscription).data("hello".to_string()).finish();
 ///     let res = schema.execute(r#"
 ///     {
@@ -564,12 +638,22 @@ pub use async_graphql_derive::InputObject;
 ///             "value_d": 11
 ///         }
 ///     }));
-/// }
+/// });
 /// ```
 pub use async_graphql_derive::Interface;
 
+/// Derive a GraphQL interface
+///
+/// You can also [use an attribute](attr.Interface.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_interface.html).*
+pub use async_graphql_derive::GQLInterface;
+
 /// Define a GraphQL union
 ///
+/// You can also [derive this](derive.GQLUnion.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_union.html).*
 ///
 /// # Macro parameters
 ///
@@ -610,8 +694,7 @@ pub use async_graphql_derive::Interface;
 ///     }
 /// }
 ///
-/// #[async_std::main]
-/// async fn main() {
+/// async_std::task::block_on(async move {
 ///     let schema = Schema::build(QueryRoot, EmptyMutation, EmptySubscription).data("hello".to_string()).finish();
 ///     let res = schema.execute(r#"
 ///     {
@@ -630,11 +713,20 @@ pub use async_graphql_derive::Interface;
 ///             { "valueB": 20 },
 ///         ]
 ///     }));
-/// }
+/// });
 /// ```
 pub use async_graphql_derive::Union;
 
+/// Derive a GraphQL union
+///
+/// You can also [use an attribute](attr.Union.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/define_union.html).*
+pub use async_graphql_derive::GQLUnion;
+
 /// Define a GraphQL subscription
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/subscription.html).*
 ///
 /// The field function is a synchronization function that performs filtering. When true is returned, the message is pushed to the client.
 /// The second parameter is the type of the field.
@@ -660,12 +752,14 @@ pub use async_graphql_derive::Union;
 ///
 /// # Field argument parameters
 ///
-/// | Attribute   | description               | Type     | Optional |
-/// |-------------|---------------------------|----------|----------|
-/// | name        | Argument name             | string   | Y        |
-/// | desc        | Argument description      | string   | Y        |
-/// | default     | Argument default value    | string   | Y        |
-/// | validator   | Input value validator     | [`InputValueValidator`](validators/trait.InputValueValidator.html) | Y        |
+/// | Attribute    | description                              | Type        | Optional |
+/// |--------------|------------------------------------------|-------------|----------|
+/// | name         | Argument name                            | string      | Y        |
+/// | desc         | Argument description                     | string      | Y        |
+/// | default      | Use `Default::default` for default value | none        | Y        |
+/// | default      | Argument default value                   | literal     | Y        |
+/// | default_with | Expression to generate default value     | code string | Y        |
+/// | validator    | Input value validator                    | [`InputValueValidator`](validators/trait.InputValueValidator.html) | Y        |
 ///
 /// # Examples
 ///
@@ -689,9 +783,6 @@ pub use async_graphql_derive::Union;
 /// ```
 pub use async_graphql_derive::Subscription;
 
-/// Define a DataSource
-pub use async_graphql_derive::DataSource;
-
 /// Define a Scalar
 ///
 /// # Macro parameters
@@ -702,3 +793,103 @@ pub use async_graphql_derive::DataSource;
 /// | desc        | Scalar description        | string   | Y        |
 ///
 pub use async_graphql_derive::Scalar;
+
+/// Define a merged object with multiple object types.
+///
+/// You can also [derive this](derive.GQLMergedObject.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/merging_objects.html).*
+///
+/// # Macro parameters
+///
+/// | Attribute     | description               | Type     | Optional |
+/// |---------------|---------------------------|----------|----------|
+/// | name          | Object name               | string   | Y        |
+/// | desc          | Object description        | string   | Y        |
+/// | cache_control | Object cache control      | [`CacheControl`](struct.CacheControl.html) | Y        |
+/// | extends       | Add fields to an entity that's defined in another service | bool | Y |
+///
+/// # Examples
+///
+/// ```rust
+/// use async_graphql::*;
+///
+/// #[SimpleObject]
+///  struct Object1 {
+///     a: i32,
+///  }
+///
+/// #[SimpleObject]
+/// struct Object2 {
+///     b: i32,
+/// }
+///
+/// #[SimpleObject]
+/// struct Object3 {
+///     c: i32,
+/// }
+///
+/// #[MergedObject]
+/// struct MyObj(Object1, Object2, Object3);
+///
+/// let obj = MyObj(Object1 { a: 10 }, Object2 { b: 20 }, Object3 { c: 30 });
+/// ```
+pub use async_graphql_derive::MergedObject;
+
+/// Derive a GraphQL Merged object
+///
+/// You can also [use an attribute](attr.MergedObject.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/merging_objects.html).*
+pub use async_graphql_derive::GQLMergedObject;
+
+/// Define a merged subscription with multiple subscription types.
+///
+/// You can also [derive this](derive.GQLMergedSubscription.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/merging_objects.html).*
+///
+/// # Macro parameters
+///
+/// | Attribute     | description               | Type     | Optional |
+/// |---------------|---------------------------|----------|----------|
+/// | name          | Object name               | string   | Y        |
+/// | desc          | Object description        | string   | Y        |
+///
+/// # Examples
+///
+/// ```rust
+/// use async_graphql::*;
+/// use futures::Stream;
+///
+/// #[derive(Default)]
+/// struct Subscription1;
+///
+/// #[Subscription]
+/// impl Subscription1 {
+///     async fn events1(&self) -> impl Stream<Item = i32> {
+///         futures::stream::iter(0..10)
+///     }
+/// }
+///
+/// #[derive(Default)]
+/// struct Subscription2;
+///
+/// #[Subscription]
+/// impl Subscription2 {
+///     async fn events2(&self) -> impl Stream<Item = i32> {
+///         futures::stream::iter(10..20)
+///    }
+/// }
+///
+/// #[derive(GQLMergedSubscription, Default)]
+/// struct Subscription(Subscription1, Subscription2);
+/// ```
+pub use async_graphql_derive::MergedSubscription;
+
+/// Derive a GraphQL merged subscription with multiple subscription types.
+///
+/// You can also [use an attribute](attr.MergedSubscription.html).
+///
+/// *[See also the Book](https://async-graphql.github.io/async-graphql/en/merging_objects.html).*
+pub use async_graphql_derive::GQLMergedSubscription;

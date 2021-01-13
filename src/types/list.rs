@@ -1,8 +1,8 @@
+use crate::parser::types::Field;
 use crate::{
     registry, ContextSelectionSet, InputValueResult, InputValueType, OutputValueType, Positioned,
     Result, Type, Value,
 };
-use async_graphql_parser::query::Field;
 use std::borrow::Cow;
 
 impl<T: Type> Type for Vec<T> {
@@ -56,13 +56,18 @@ impl<T: OutputValueType + Send + Sync> OutputValueType for Vec<T> {
     }
 }
 
-impl<T: Type> Type for &[T] {
+impl<'a, T: Type + 'a> Type for &'a [T] {
     fn type_name() -> Cow<'static, str> {
-        Cow::Owned(format!("[{}]", T::type_name()))
+        Cow::Owned(format!("[{}]", T::qualified_type_name()))
+    }
+
+    fn qualified_type_name() -> String {
+        format!("[{}]!", T::qualified_type_name())
     }
 
     fn create_type_info(registry: &mut registry::Registry) -> String {
-        T::create_type_info(registry)
+        T::create_type_info(registry);
+        Self::qualified_type_name()
     }
 }
 
@@ -95,5 +100,7 @@ mod tests {
         assert_eq!(Vec::<i32>::qualified_type_name(), "[Int!]!");
         assert_eq!(Vec::<Option<i32>>::qualified_type_name(), "[Int]!");
         assert_eq!(Option::<Vec::<Option<i32>>>::qualified_type_name(), "[Int]");
+
+        assert_eq!(<&[i32] as Type>::qualified_type_name(), "[Int!]!");
     }
 }

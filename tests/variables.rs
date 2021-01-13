@@ -24,13 +24,10 @@ pub async fn test_variables() {
             }
         "#,
     )
-    .variables(
-        Variables::parse_from_json(serde_json::json!({
-            "intVal": 10,
-             "intListVal": [1, 2, 3, 4, 5],
-        }))
-        .unwrap(),
-    );
+    .variables(Variables::parse_from_json(serde_json::json!({
+        "intVal": 10,
+         "intListVal": [1, 2, 3, 4, 5],
+    })));
     let resp = query.execute(&schema).await.unwrap();
     assert_eq!(
         resp.data,
@@ -63,6 +60,66 @@ pub async fn test_variable_default_value() {
         )
         .await
         .unwrap();
+    assert_eq!(
+        resp.data,
+        serde_json::json!({
+            "intVal": 10,
+        })
+    );
+}
+
+#[async_std::test]
+pub async fn test_variable_no_value() {
+    struct QueryRoot;
+
+    #[Object]
+    impl QueryRoot {
+        pub async fn int_val(&self, value: Option<i32>) -> i32 {
+            value.unwrap_or(10)
+        }
+    }
+
+    let schema = Schema::new(QueryRoot, EmptyMutation, EmptySubscription);
+    let query = QueryBuilder::new(
+        r#"
+            query QueryWithVariables($intVal: Int) {
+                intVal(value: $intVal)
+            }
+        "#,
+    )
+    .variables(Variables::parse_from_json(serde_json::json!({})));
+    let resp = query.execute(&schema).await.unwrap();
+    assert_eq!(
+        resp.data,
+        serde_json::json!({
+            "intVal": 10,
+        })
+    );
+}
+
+#[async_std::test]
+pub async fn test_variable_null() {
+    struct QueryRoot;
+
+    #[Object]
+    impl QueryRoot {
+        pub async fn int_val(&self, value: Option<i32>) -> i32 {
+            value.unwrap_or(10)
+        }
+    }
+
+    let schema = Schema::new(QueryRoot, EmptyMutation, EmptySubscription);
+    let query = QueryBuilder::new(
+        r#"
+            query QueryWithVariables($intVal: Int) {
+                intVal(value: $intVal)
+            }
+        "#,
+    )
+    .variables(Variables::parse_from_json(serde_json::json!({
+        "intVal": null,
+    })));
+    let resp = query.execute(&schema).await.unwrap();
     assert_eq!(
         resp.data,
         serde_json::json!({
@@ -109,12 +166,9 @@ pub async fn test_variable_in_input_object() {
             test(input: {value: $value })
         }"#;
         let resp = QueryBuilder::new(query)
-            .variables(
-                Variables::parse_from_json(serde_json::json!({
-                    "value": 10,
-                }))
-                .unwrap(),
-            )
+            .variables(Variables::parse_from_json(serde_json::json!({
+                "value": 10,
+            })))
             .execute(&schema)
             .await
             .unwrap();
@@ -133,12 +187,9 @@ pub async fn test_variable_in_input_object() {
             test2(input: [{value: $value }, {value: $value }])
         }"#;
         let resp = QueryBuilder::new(query)
-            .variables(
-                Variables::parse_from_json(serde_json::json!({
-                    "value": 3,
-                }))
-                .unwrap(),
-            )
+            .variables(Variables::parse_from_json(serde_json::json!({
+                "value": 3,
+            })))
             .execute(&schema)
             .await
             .unwrap();
@@ -157,12 +208,9 @@ pub async fn test_variable_in_input_object() {
             test(input: {value: $value })
         }"#;
         let resp = QueryBuilder::new(query)
-            .variables(
-                Variables::parse_from_json(serde_json::json!({
-                    "value": 10,
-                }))
-                .unwrap(),
-            )
+            .variables(Variables::parse_from_json(serde_json::json!({
+                "value": 10,
+            })))
             .execute(&schema)
             .await
             .unwrap();
