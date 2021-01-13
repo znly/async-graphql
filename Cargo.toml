@@ -22,7 +22,7 @@ async-graphql-parser = { path = "parser", version = "1.18.0" }
 
 async-stream = "0.2.1"
 async-trait = "0.1.30"
-bytes = "0.5.4"
+bytes = "1.0"
 chrono = "0.4.10"
 fnv = "1.0.6"
 futures = "0.3.5"
@@ -35,7 +35,7 @@ multer = "1.2.2"
 once_cell = "1.3.1"
 parking_lot = "0.10.0"
 regex = "1.3.5"
-serde = { version = "1.0.104", features = ["derive"] }
+serde = { version = "=1.0.118", features = ["derive"] }
 serde_json = "1.0.48"
 slab = "0.4.2"
 spin = "0.5.2"
@@ -51,6 +51,13 @@ chrono-tz = { version = "0.5.1", optional = true }
 
 [dev-dependencies]
 async-std = { version = "1.5.0", features = ["attributes"] }
+serde = "1.0.118"
+serde_derive = "1.0.118"
+
+
+[patch.crates-io]
+## Forks
+multer = { git = "https://github.com/rousan/multer-rs.git", branch = "master" } # tokio / bytes 1.0
 
 [workspace]
 members = [
@@ -59,7 +66,7 @@ members = [
     "integrations/actix-web",
     "integrations/warp",
     "integrations/tide",
-    "integrations/rocket",
+    # "integrations/rocket",
 #    "integrations/lambda",
     "benchmark",
 ]
