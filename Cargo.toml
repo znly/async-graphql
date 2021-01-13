@@ -56,7 +56,6 @@ serde_derive = "1.0.118"
 
 
 [patch.crates-io]
-## Forks
 multer = { git = "https://github.com/rousan/multer-rs.git", branch = "master" } # tokio / bytes 1.0
 
 [workspace]
