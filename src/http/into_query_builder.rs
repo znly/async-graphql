@@ -1,13 +1,17 @@
-use crate::http::GQLRequest;
-use crate::query::{IntoQueryBuilder, IntoQueryBuilderOpts};
-use crate::{ParseRequestError, QueryBuilder};
+use crate::{
+    http::GQLRequest,
+    query::{IntoQueryBuilder, IntoQueryBuilderOpts},
+    ParseRequestError, QueryBuilder,
+};
 use bytes::Bytes;
 use futures::{stream, AsyncRead, AsyncReadExt, Stream};
 use multer::{Constraints, Multipart, SizeLimit};
-use std::collections::HashMap;
-use std::io::{self, Seek, SeekFrom, Write};
-use std::pin::Pin;
-use std::task::Poll;
+use std::{
+    collections::HashMap,
+    io::{self, Seek, SeekFrom, Write},
+    pin::Pin,
+    task::Poll,
+};
 
 impl From<multer::Error> for ParseRequestError {
     fn from(err: multer::Error) -> Self {
