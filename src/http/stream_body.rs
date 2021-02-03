@@ -1,8 +1,12 @@
 use bytes::{Buf, Bytes};
-use futures::task::{Context, Poll};
-use futures::{AsyncRead, Stream, StreamExt};
-use std::io::{Error, ErrorKind, Result};
-use std::pin::Pin;
+use futures::{
+    task::{Context, Poll},
+    AsyncRead, Stream, StreamExt,
+};
+use std::{
+    io::{Error, ErrorKind, Result},
+    pin::Pin,
+};
 
 /// An Adapter for bytes stream to `AsyncRead`
 pub struct StreamBody<S> {
@@ -41,7 +45,7 @@ where
             } else {
                 match self.s.poll_next_unpin(cx) {
                     Poll::Ready(Some(Ok(mut bytes))) => {
-                        self.remaining_bytes = Some(bytes.to_bytes());
+                        self.remaining_bytes = Some(bytes.copy_to_bytes(bytes.remaining()));
                     }
                     Poll::Ready(Some(Err(_))) => {
                         return Poll::Ready(Err(Error::from(ErrorKind::InvalidData)))
