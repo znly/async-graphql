@@ -56,7 +56,8 @@ serde_derive = "1.0"
 
 
 [patch.crates-io]
-multer = { git = "https://github.com/rousan/multer-rs.git", branch = "master" } # tokio / bytes 1.0
+## pinned because master supports tokio1/bytes1 which isn't part of any release yet.
+multer = { git = "https://github.com/rousan/multer-rs.git", rev = "16e975fc38bc6f4b970ad980d52a0d01db731f9e" }
 
 [workspace]
 members = [
