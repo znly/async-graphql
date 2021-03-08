@@ -186,6 +186,7 @@ where
                             }
                             Poll::Ready(None) => {
                                 closed.push(id);
+                                return Poll::Ready(None);
                             }
                             Poll::Pending => {}
                         }
