@@ -52,7 +52,11 @@ pub trait ConnectionTransport: Send + Sync + Unpin + 'static {
         Subscription: SubscriptionType + Sync + Send + 'static;
 
     /// When a response message is generated, you can convert the message to the format you want here.
-    fn handle_response(&mut self, id: usize, res: Result<serde_json::Value>) -> Option<Vec<u8>>;
+    fn handle_response(
+        &mut self,
+        id: usize,
+        res: Option<Result<serde_json::Value>>,
+    ) -> Option<Vec<u8>>;
 }
 
 pub fn create_connection<Query, Mutation, Subscription, T: ConnectionTransport>(
@@ -180,13 +184,15 @@ where
                                 if res.is_err() {
                                     closed.push(id);
                                 }
-                                if let Some(bytes) = transport.handle_response(id, res) {
+                                if let Some(bytes) = transport.handle_response(id, Some(res)) {
                                     return Poll::Ready(Some(bytes));
                                 }
                             }
                             Poll::Ready(None) => {
                                 closed.push(id);
-                                return Poll::Ready(None);
+                                if let Some(bytes) = transport.handle_response(id, None) {
+                                    return Poll::Ready(Some(bytes));
+                                }
                             }
                             Poll::Pending => {}
                         }

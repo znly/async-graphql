@@ -193,10 +193,14 @@ impl ConnectionTransport for WebSocketTransport {
         }
     }
 
-    fn handle_response(&mut self, id: usize, res: Result<serde_json::Value>) -> Option<Vec<u8>> {
+    fn handle_response(
+        &mut self,
+        id: usize,
+        res: Option<Result<serde_json::Value>>,
+    ) -> Option<Vec<u8>> {
         if let Some(id) = self.sid_to_id.get(&id) {
             match res {
-                Ok(value) => Some(
+                Some(Ok(value)) => Some(
                     serde_json::to_vec(&OperationMessage {
                         ty: "data".to_string(),
                         id: Some(id.clone()),
@@ -211,11 +215,19 @@ impl ConnectionTransport for WebSocketTransport {
                     })
                     .unwrap(),
                 ),
-                Err(err) => Some(
+                Some(Err(err)) => Some(
                     serde_json::to_vec(&OperationMessage {
                         ty: "error".to_string(),
                         id: Some(id.to_string()),
                         payload: Some(serde_json::to_value(GQLError(&err)).unwrap()),
+                    })
+                    .unwrap(),
+                ),
+                None => Some(
+                    serde_json::to_vec(&OperationMessage {
+                        ty: "complete".to_string(),
+                        id: Some(id.to_string()),
+                        payload: None,
                     })
                     .unwrap(),
                 ),
