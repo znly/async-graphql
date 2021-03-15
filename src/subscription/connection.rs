@@ -176,29 +176,36 @@ where
             // receive msg
             if let (Some(streams), Some(transport)) = (&mut this.streams, &mut this.transport) {
                 if !streams.streams.is_empty() {
-                    let mut closed = Vec::new();
+                    let mut to_close = None;
+                    let mut to_return = None;
 
                     for (id, incoming_stream) in &mut streams.streams {
                         match incoming_stream.as_mut().poll_next(cx) {
                             Poll::Ready(Some(res)) => {
                                 if res.is_err() {
-                                    closed.push(id);
+                                    to_close = Some(id);
                                 }
                                 if let Some(bytes) = transport.handle_response(id, Some(res)) {
-                                    return Poll::Ready(Some(bytes));
+                                    to_return = Some(bytes);
+                                    break;
                                 }
                             }
                             Poll::Ready(None) => {
-                                closed.push(id);
+                                to_close = Some(id);
                                 if let Some(bytes) = transport.handle_response(id, None) {
-                                    return Poll::Ready(Some(bytes));
+                                    to_return = Some(bytes);
+                                    break;
                                 }
                             }
                             Poll::Pending => {}
                         }
                     }
-
-                    closed.iter().for_each(|id| streams.remove(*id));
+                    if let Some(id) = to_close {
+                        streams.remove(id);
+                    }
+                    if let Some(data) = to_return {
+                        return Poll::Ready(Some(data))
+                    }
                     this.waker.register(cx.waker());
                     return Poll::Pending;
                 } else {
